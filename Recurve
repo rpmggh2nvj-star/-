@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recurve｜試験対策プランナー</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Zen+Antique&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --paper:#F1F4EF;
+  --card:#FCFBF8;
+  --ink:#2A2E28;
+  --ink-soft:#6B7268;
+  --line:#DCE0D6;
+
+  --c-teiki:#C88A2E;
+  --c-teiki-tint:#F4E3C4;
+  --c-teiki-deep:#8A5A1E;
+
+  --c-cbt:#35406B;
+  --c-cbt-tint:#E4E7F0;
+  --c-cbt-deep:#35406B;
+
+  --c-kokushi:#164F46;
+  --c-kokushi-tint:#DCEAE6;
+  --c-kokushi-deep:#164F46;
+
+  --red:#B14A3B;
+  --red-tint:#F5DEDA;
+  --green:#1F6F63;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Zen Kaku Gothic New', sans-serif;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; animation:none !important; }
+}
+:focus-visible{ outline:2px solid var(--green); outline-offset:2px; }
+
+.loading-screen{
+  display:flex; align-items:center; justify-content:center;
+  height:60vh; color:var(--ink-soft); font-size:14px;
+}
+
+.app-shell{ max-width:880px; margin:0 auto; padding:20px 16px 80px; }
+
+/* header */
+.app-header{ margin-bottom:20px; }
+.header-main{
+  display:flex; justify-content:space-between; align-items:flex-start;
+  flex-wrap:wrap; gap:12px; margin-bottom:14px;
+}
+.brand{ display:flex; align-items:center; gap:12px; }
+.brand-mark{
+  display:flex; align-items:center; flex-shrink:0;
+}
+.time-sep{ color:var(--line); margin:0 4px; }
+.task-understanding{ font-size:11px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; }
+.studytime-bar{ position:relative; height:16px; background:var(--line); border-radius:8px; overflow:hidden; }
+.studytime-fill{ height:100%; background:var(--green); border-radius:8px; transition:width 0.4s ease; }
+.ghost-fill{ background:rgba(42,46,40,0.35); }
+.ghost-caption{ font-size:12px; color:var(--ink-soft); margin-top:6px; }
+.ghost-ahead{ color:var(--green); font-weight:700; }
+.ghost-behind{ color:var(--red); font-weight:700; }
+.pomodoro-box{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; text-align:center; margin-bottom:16px; }
+.pomodoro-phase-row{ display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:4px; }
+.pomodoro-phase-badge{ font-size:11px; font-weight:700; padding:2px 10px; border-radius:999px; font-family:'JetBrains Mono',monospace; }
+.phase-work{ background:var(--c-cbt-tint); color:var(--c-cbt-deep); }
+.phase-short{ background:var(--c-teiki-tint); color:var(--c-teiki-deep); }
+.phase-long{ background:var(--c-kokushi-tint); color:var(--c-kokushi-deep); }
+.pomodoro-cycle{ font-size:12px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; }
+.pomodoro-time{ font-family:'JetBrains Mono',monospace; font-size:42px; font-weight:700; margin:4px 0 12px; letter-spacing:0.02em; }
+.pomodoro-controls{ display:flex; gap:8px; justify-content:center; }
+.race-bars{ margin-top:4px; }
+.race-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.race-label{ width:180px; flex-shrink:0; font-size:12px; }
+.race-row .studytime-bar{ flex:1; }
+.race-value{ width:52px; text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-soft); flex-shrink:0; }
+.brand h1{
+  font-family:'Zen Antique', serif; font-size:24px; margin:0 0 2px;
+  letter-spacing:0.04em;
+}
+.subtitle{ margin:0; font-size:12px; color:var(--ink-soft); }
+.header-meta{ text-align:right; font-size:12px; color:var(--ink-soft); }
+.today-date{ font-family:'JetBrains Mono',monospace; font-size:13px; margin-bottom:4px; }
+.streak{ font-size:13px; }
+.streak-best{ color:var(--ink-soft); font-size:11px; }
+
+.tabs{ display:flex; gap:4px; border-bottom:1px solid var(--line); }
+.tab-btn{
+  appearance:none; border:none; background:none; cursor:pointer;
+  font-family:'Zen Kaku Gothic New', sans-serif; font-size:14px; font-weight:700;
+  padding:10px 14px; color:var(--ink-soft); border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+}
+.tab-btn.active{ color:var(--c-kokushi); border-bottom-color:var(--c-kokushi); }
+
+/* sections */
+.section{ margin:22px 0; }
+.section-title{
+  font-family:'Zen Antique', serif; font-size:17px; margin:0 0 10px;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+.tip-line{ font-size:12px; color:var(--ink-soft); margin:-4px 0 14px; line-height:1.6; }
+.empty-hint{ font-size:13px; color:var(--ink-soft); background:var(--card); border:1px dashed var(--line); border-radius:8px; padding:14px; }
+.plan-tip, .plan-note{ font-size:12px; color:var(--ink-soft); line-height:1.7; }
+
+/* track chip pill */
+.track-chip{
+  display:inline-block; padding:2px 10px; border-radius:999px;
+  font-size:11px; font-weight:700; font-family:'JetBrains Mono',monospace;
+  white-space:nowrap;
+}
+.chip-teiki{ background:var(--c-teiki-tint); color:var(--c-teiki-deep); }
+.chip-cbt{ background:var(--c-cbt-tint); color:var(--c-cbt-deep); }
+.chip-kokushi{ background:var(--c-kokushi-tint); color:var(--c-kokushi-deep); }
+
+/* today: track summary cards */
+.track-cards{ display:flex; gap:12px; flex-wrap:wrap; }
+.track-card{
+  flex:1; min-width:190px; background:var(--card); border:1px solid var(--line);
+  border-top:4px solid var(--ink-soft); border-radius:10px; padding:14px 16px;
+}
+.track-card.tc-teiki{ border-top-color:var(--c-teiki); }
+.track-card.tc-cbt{ border-top-color:var(--c-cbt); }
+.track-card.tc-kokushi{ border-top-color:var(--c-kokushi); }
+.track-card-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.alloc-pct{ font-size:11px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; }
+.countdown{ font-family:'JetBrains Mono',monospace; font-size:34px; font-weight:700; line-height:1; }
+.countdown-unit{ font-size:13px; font-weight:400; margin-left:2px; color:var(--ink-soft); }
+.track-examdate{ font-size:12px; color:var(--ink-soft); margin:4px 0 8px; }
+.track-gap{ font-size:12px; }
+
+/* due list */
+.due-count{ font-size:12px; background:var(--red); color:#fff; border-radius:999px; padding:1px 8px; font-family:'JetBrains Mono',monospace; }
+.due-list{ display:flex; flex-direction:column; gap:8px; }
+.due-item{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:var(--red-tint); border:1px solid var(--red); border-radius:8px; padding:10px 12px;
+}
+.due-name{ font-weight:700; flex:1; min-width:100px; }
+.due-level{ font-size:12px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; }
+
+/* buttons */
+.btn-small, .btn-primary, .btn-outline, .btn-outline-danger{
+  font-family:'Zen Kaku Gothic New', sans-serif; font-size:12px; font-weight:700;
+  border-radius:7px; padding:7px 12px; cursor:pointer; border:1px solid var(--line);
+}
+.btn-small{ background:var(--card); color:var(--ink); }
+.btn-small:hover{ border-color:var(--green); }
+.btn-primary{ background:var(--green); color:#fff; border-color:var(--green); }
+.btn-outline{ background:none; color:var(--ink-soft); }
+.btn-outline-danger{ background:none; color:var(--red); border-color:var(--red); }
+.icon-btn{
+  border:none; background:none; cursor:pointer; color:var(--ink-soft); font-size:14px;
+  padding:2px 6px;
+}
+.icon-btn:hover{ color:var(--red); }
+
+/* task list */
+.task-list{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+.task-item{
+  display:flex; align-items:center; gap:10px; background:var(--card);
+  border:1px solid var(--line); border-radius:8px; padding:9px 12px; flex-wrap:wrap;
+}
+.task-item.done{ opacity:0.5; text-decoration:line-through; }
+.task-check input{ display:none; }
+.checkmark{
+  display:inline-block; width:16px; height:16px; border:1.5px solid var(--ink-soft);
+  border-radius:4px; cursor:pointer; position:relative;
+}
+.task-check input:checked + .checkmark{ background:var(--green); border-color:var(--green); }
+.task-check input:checked + .checkmark::after{
+  content:''; position:absolute; left:4px; top:1px; width:4px; height:8px;
+  border:solid #fff; border-width:0 2px 2px 0; transform:rotate(40deg);
+}
+.task-name{ font-weight:700; }
+.task-activity{ font-size:12px; color:var(--ink-soft); }
+.task-minutes{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-soft); }
+.manual-add{ display:flex; gap:8px; margin:10px 0; }
+.text-input, .number-input, .date-input{
+  font-family:'Zen Kaku Gothic New', sans-serif; font-size:13px; padding:7px 10px;
+  border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink);
+}
+.text-input{ flex:1; }
+
+/* karute */
+.track-header{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.track-header-date{ font-size:12px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; margin-left:auto; }
+.subject-grid{
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+  gap:12px; margin:12px 0;
+}
+.subject-card{
+  background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+}
+.subject-card.is-due{ border-color:var(--red); background:var(--red-tint); }
+.subject-card-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+.subject-name{ font-weight:700; font-size:14px; }
+.decay-svg{ width:100%; height:60px; display:block; margin:6px 0; }
+.decay-mec{ stroke:var(--red); stroke-dasharray:3 3; stroke-width:1; }
+.decay-next{ stroke:var(--ink-soft); stroke-dasharray:2 2; stroke-width:1; }
+.decay-empty{ font-size:10px; fill:var(--ink-soft); }
+.subject-meta{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-soft); margin-bottom:6px; }
+.range-input{ width:100%; accent-color:var(--green); margin-bottom:8px; }
+.btn-record{ width:100%; }
+.add-subject-row{ display:flex; gap:8px; margin-top:6px; }
+
+/* plan */
+.alloc-bar{ display:flex; height:16px; border-radius:6px; overflow:hidden; border:1px solid var(--line); }
+.alloc-seg{ height:100%; }
+.bar-teiki{ background:var(--c-teiki); }
+.bar-cbt{ background:var(--c-cbt); }
+.bar-kokushi{ background:var(--c-kokushi); }
+.alloc-legend{ display:flex; gap:16px; flex-wrap:wrap; margin:10px 0; font-size:12px; }
+.legend-dot{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+.weight-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.weight-row{ display:flex; align-items:center; gap:10px; font-size:12px; }
+.weight-name{ width:130px; flex-shrink:0; }
+.weight-bar-track{ flex:1; background:var(--line); border-radius:5px; height:10px; overflow:hidden; }
+.weight-bar-fill{ height:100%; }
+.weight-pct{ width:36px; text-align:right; font-family:'JetBrains Mono',monospace; color:var(--ink-soft); }
+.phase-list{ display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+.phase-card{ background:var(--card); border:1px solid var(--line); border-left:4px solid var(--c-kokushi); border-radius:8px; padding:12px 14px; }
+.phase-label{ font-weight:700; margin-bottom:2px; }
+.phase-dates{ font-size:12px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; margin-bottom:4px; }
+.phase-focus{ font-size:13px; }
+
+/* settings */
+.settings-row{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:10px; }
+.settings-row label{ font-size:12px; color:var(--ink-soft); display:flex; align-items:center; gap:6px; }
+
+/* modal */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(42,46,40,0.45);
+  display:flex; align-items:center; justify-content:center; padding:16px; z-index:50;
+}
+.modal-box{
+  background:#fff; border-radius:12px; padding:22px; width:100%; max-width:340px;
+}
+.modal-box h3{ margin:0 0 2px; font-family:'Zen Antique', serif; }
+.modal-sub{ font-size:12px; color:var(--ink-soft); margin:0 0 16px; }
+.modal-label{ font-size:12px; color:var(--ink-soft); display:block; margin-bottom:4px; }
+.modal-value{ font-family:'JetBrains Mono',monospace; text-align:right; font-size:13px; margin-bottom:14px; }
+.modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
+
+/* toast */
+#toast-container{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:100; display:flex; flex-direction:column; gap:6px; align-items:center; }
+.toast{
+  background:var(--ink); color:#fff; padding:8px 16px; border-radius:999px; font-size:12px;
+  opacity:1; transition:opacity 0.3s;
+}
+.toast-out{ opacity:0; }
+
+@media (max-width:560px){
+  .header-main{ flex-direction:column; }
+  .header-meta{ text-align:left; }
+  .countdown{ font-size:28px; }
+  .weight-name{ width:90px; }
+}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading-screen">読み込み中…</div></div>
+<div id="toast-container"></div>
+
+<script>
+const STORAGE_KEY = 'karute-planner-v1';
+const TRACK_ORDER = ['teiki','cbt','kokushi'];
+const INTERVALS = [1,3,7,14,30];
+
+let state = null;
+let activeTab = 'today';
+let pendingRating = null;
+let confirmingDelete = null;
+let confirmingReset = false;
+let saveTimer = null;
+
+/* ---------- date utils ---------- */
+function todayStr(){
+  const t = new Date();
+  return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+}
+function parseLocalDate(s){
+  const [y,m,d] = s.split('-').map(Number);
+  return new Date(y, m-1, d);
+}
+function daysBetween(a,b){
+  return Math.round((parseLocalDate(b) - parseLocalDate(a)) / 86400000);
+}
+function daysUntil(dateStr){
+  return daysBetween(todayStr(), dateStr);
+}
+function addDays(dateStr, n){
+  const d = parseLocalDate(dateStr);
+  d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function formatDate(s){
+  const [y,m,d] = s.split('-');
+  return y+'年'+Number(m)+'月'+Number(d)+'日';
+}
+function uid(){
+  return Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+}
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------- default data ---------- */
+function defaultSubjects(base){
+  return ['物理系薬学','化学系薬学','生物系薬学','衛生薬学','薬理学','薬剤学','病態・薬物治療','法規・制度・倫理','実務（薬学臨床）']
+    .map(name => ({ id: uid(), name, understanding: base, lastStudied: null, reviewStage: 0 }));
+}
+function seedState(){
+  const t = todayStr();
+  return {
+    version: 1,
+    dailyMinutes: 180,
+    tracks: {
+      teiki:   { label:'定期テスト',        short:'定期', examDate: addDays(t,14),  targetScore:80, subjects: [] },
+      cbt:     { label:'CBT',               short:'CBT',  examDate: addDays(t,120), targetScore:70, subjects: defaultSubjects(30) },
+      kokushi: { label:'薬剤師国家試験',    short:'国試', examDate:'2029-02-25',    targetScore:65, subjects: defaultSubjects(15) },
+    },
+    studyLog: [],
+    completions: {},
+    manualTasks: {},
+    streak: { current:0, best:0, lastDate:null },
+    timerSessions: [],
+    pomodoro: { status:'idle', phase:'work', cycle:1, phaseEndAt:null, remainingWhenPaused:null, todayStartedAt:null },
+  };
+}
+function migrateState(s){
+  if(!s.dailyMinutes) s.dailyMinutes = 180;
+  if(!s.studyLog) s.studyLog = [];
+  if(!s.completions) s.completions = {};
+  if(!s.manualTasks) s.manualTasks = {};
+  if(!s.streak) s.streak = { current:0, best:0, lastDate:null };
+  if(!s.timerSessions) s.timerSessions = [];
+  if(!s.pomodoro) s.pomodoro = { status:'idle', phase:'work', cycle:1, phaseEndAt:null, remainingWhenPaused:null, todayStartedAt:null };
+  if(!s.tracks) s.tracks = {};
+  TRACK_ORDER.forEach(k=>{
+    if(!s.tracks[k]) s.tracks[k] = { label:k, short:k, examDate: todayStr(), targetScore:70, subjects: [] };
+    if(!s.tracks[k].subjects) s.tracks[k].subjects = [];
+    s.tracks[k].subjects.forEach(sub=>{
+      if(sub.understanding == null) sub.understanding = 30;
+      if(sub.reviewStage == null) sub.reviewStage = 0;
+      if(sub.lastStudied === undefined) sub.lastStudied = null;
+    });
+  });
+}
+
+/* ---------- storage ---------- */
+async function loadState(){
+  try{
+    const res = await window.storage.get(STORAGE_KEY, false);
+    state = JSON.parse(res.value);
+    migrateState(state);
+  }catch(e){
+    state = seedState();
+    try{ await window.storage.set(STORAGE_KEY, JSON.stringify(state), false); }
+    catch(e2){ console.error('initial save failed', e2); }
+  }
+  catchUpPomodoro();
+  render();
+}
+function saveState(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{ await window.storage.set(STORAGE_KEY, JSON.stringify(state), false); }
+    catch(e){ console.error('save failed', e); showToast('保存に失敗しました'); }
+  }, 350);
+}
+
+/* ---------- core algorithm ---------- */
+function computeAllocation(){
+  const raw = {};
+  TRACK_ORDER.forEach(k=>{
+    const days = Math.max(daysUntil(state.tracks[k].examDate), 1);
+    raw[k] = 1/days;
+  });
+  const sum = Object.values(raw).reduce((a,b)=>a+b,0) || 1;
+  let pct = {};
+  TRACK_ORDER.forEach(k=> pct[k] = raw[k]/sum*100);
+  const FLOOR = 8;
+  let deficit = 0, flex = [];
+  TRACK_ORDER.forEach(k=>{
+    if(pct[k] < FLOOR){ deficit += FLOOR - pct[k]; pct[k] = FLOOR; }
+    else flex.push(k);
+  });
+  if(deficit > 0 && flex.length){
+    const flexSum = flex.reduce((a,k)=>a+pct[k],0) || 1;
+    flex.forEach(k=> pct[k] -= deficit * (pct[k]/flexSum));
+  }
+  return pct;
+}
+function subjectWeights(subjects){
+  const weights = subjects.map(s=> Math.max(8, 100 - s.understanding));
+  const sum = weights.reduce((a,b)=>a+b,0) || 1;
+  return subjects.map((s,i)=> Object.assign({}, s, { pct: weights[i]/sum*100 }));
+}
+function reviewInfo(subject){
+  if(!subject.lastStudied){
+    return { level:0, isDue:false, neverStudied:true, nextReview:null, daysSince:null };
+  }
+  const stage = Math.min(subject.reviewStage||0, INTERVALS.length-1);
+  const halfLife = INTERVALS[stage];
+  const daysSince = daysBetween(subject.lastStudied, todayStr());
+  const level = subject.understanding * Math.exp(-daysSince/halfLife);
+  const nextReview = addDays(subject.lastStudied, halfLife);
+  const isDue = daysUntil(nextReview) <= 0;
+  return { level, isDue, neverStudied:false, nextReview, daysSince };
+}
+function activityFor(understanding){
+  if(understanding < 40) return '教材・講義ノートを読み直して要点を整理する（インプット中心）';
+  if(understanding < 70) return '章末問題や過去問を解き、間違えた所だけ解説を確認する';
+  return '過去問・模試形式で時間を計って解き、抜けている点だけ最終確認する';
+}
+function pickFocusSubjects(subjects, minutesBudget){
+  if(minutesBudget < 10 || subjects.length === 0) return [];
+  const withInfo = subjects.map(s=> Object.assign({}, s, { info: reviewInfo(s) }));
+  const due = withInfo.filter(s=> s.info.isDue && !s.info.neverStudied);
+  due.sort((a,b)=> daysBetween(b.info.nextReview, todayStr()) - daysBetween(a.info.nextReview, todayStr()));
+  const rest = withInfo.filter(s=> !(s.info.isDue && !s.info.neverStudied)).sort((a,b)=> a.understanding - b.understanding);
+  const ordered = due.concat(rest);
+  const maxPicks = Math.min(4, Math.max(1, Math.floor(minutesBudget/15)));
+  const picks = ordered.slice(0, maxPicks);
+  const per = Math.max(10, Math.round((minutesBudget/picks.length)/5)*5);
+  return picks.map(s=> Object.assign({}, s, { minutes: per, isDue: s.info.isDue && !s.info.neverStudied }));
+}
+function generateTodayTasks(){
+  const alloc = computeAllocation();
+  const tasks = [];
+  TRACK_ORDER.forEach(k=>{
+    const track = state.tracks[k];
+    if(!track.subjects.length) return;
+    const minutes = state.dailyMinutes * alloc[k] / 100;
+    const picks = pickFocusSubjects(track.subjects, minutes);
+    picks.forEach(p=>{
+      tasks.push({ trackId:k, subjectId:p.id, subjectName:p.name, minutes:p.minutes, activity: activityFor(p.understanding), understanding: p.understanding, isDue: p.isDue });
+    });
+  });
+  return tasks;
+}
+function computePhases(track){
+  const days = Math.max(daysUntil(track.examDate), 1);
+  const p1 = Math.max(1, Math.round(days*0.5));
+  const p2 = Math.max(1, Math.round(days*0.35));
+  const p3 = Math.max(1, days - p1 - p2);
+  const start = todayStr();
+  const p1end = addDays(start, p1);
+  const p2end = addDays(p1end, p2);
+  const weakest = subjectWeights(track.subjects).slice().sort((a,b)=>a.understanding-b.understanding).slice(0,3).map(s=>s.name);
+  return [
+    { label:'基礎固め期', from:start, to:p1end, days:p1, focus: '弱点科目を中心にインプット（' + (weakest.join('・') || '—') + '）' },
+    { label:'演習・応用期', from:p1end, to:p2end, days:p2, focus: '問題演習・模試で得点力を高める' },
+    { label:'直前対策期', from:p2end, to:track.examDate, days:p3, focus: '総復習・弱点の最終確認' },
+  ];
+}
+
+/* ---------- pomodoro timer ---------- */
+const POMO_WORK = 25*60;
+const POMO_SHORT = 5*60;
+const POMO_LONG = 20*60;
+let pomodoroTickHandle = null;
+
+function phaseDuration(phase){
+  if(phase==='work') return POMO_WORK;
+  if(phase==='short_break') return POMO_SHORT;
+  return POMO_LONG;
+}
+function phaseLabel(phase){
+  if(phase==='work') return '作業';
+  if(phase==='short_break') return '小休憩';
+  return '長い休憩';
+}
+function fmtMMSS(totalSeconds){
+  const s = Math.max(0, Math.round(totalSeconds));
+  const m = Math.floor(s/60);
+  const sec = s%60;
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+function playBeep(){
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.4);
+    o.start();
+    o.stop(ctx.currentTime+0.4);
+  }catch(e){ /* audio unavailable, ignore */ }
+}
+function ensureFreshPomodoroDay(){
+  const p = state.pomodoro;
+  if(p.todayStartedAt && p.todayStartedAt.slice(0,10) !== todayStr()){
+    state.pomodoro = { status:'idle', phase:'work', cycle:1, phaseEndAt:null, remainingWhenPaused:null, todayStartedAt:null };
+  }
+}
+function completePomodoroPhase(atIso){
+  const p = state.pomodoro;
+  const endedAt = atIso || new Date().toISOString();
+  if(p.phase==='work'){
+    const startedAt = new Date(new Date(endedAt).getTime() - POMO_WORK*1000).toISOString();
+    state.timerSessions.push({ date: endedAt.slice(0,10), startedAt, endedAt, minutes: POMO_WORK/60 });
+    updateStreak();
+    showToast('作業終了！お疲れ様です');
+    p.phase = (p.cycle >= 4) ? 'long_break' : 'short_break';
+  } else if(p.phase==='short_break'){
+    p.cycle += 1;
+    p.phase = 'work';
+    showToast('休憩終了、再開しましょう');
+  } else {
+    p.cycle = 1;
+    p.phase = 'work';
+    showToast('長い休憩終了、次のセットです');
+  }
+  playBeep();
+}
+function pomodoroStartPause(){
+  ensureFreshPomodoroDay();
+  const p = state.pomodoro;
+  if(p.status === 'running'){
+    const remaining = Math.max(0, Math.round((new Date(p.phaseEndAt) - new Date())/1000));
+    p.remainingWhenPaused = remaining;
+    p.phaseEndAt = null;
+    p.status = 'paused';
+    stopPomodoroTicking();
+  } else {
+    const dur = (p.status==='paused' && p.remainingWhenPaused!=null) ? p.remainingWhenPaused : phaseDuration(p.phase);
+    p.phaseEndAt = new Date(Date.now() + dur*1000).toISOString();
+    p.remainingWhenPaused = null;
+    p.status = 'running';
+    if(!p.todayStartedAt) p.todayStartedAt = new Date().toISOString();
+    ensurePomodoroTicking();
+  }
+  saveState();
+}
+function pomodoroReset(){
+  const keepStart = state.pomodoro.todayStartedAt;
+  state.pomodoro = { status:'idle', phase:'work', cycle:1, phaseEndAt:null, remainingWhenPaused:null, todayStartedAt: keepStart };
+  stopPomodoroTicking();
+  saveState();
+}
+function ensurePomodoroTicking(){
+  if(pomodoroTickHandle) return;
+  pomodoroTickHandle = setInterval(pomodoroTick, 1000);
+}
+function stopPomodoroTicking(){
+  if(pomodoroTickHandle){ clearInterval(pomodoroTickHandle); pomodoroTickHandle = null; }
+}
+function pomodoroTick(){
+  const p = state.pomodoro;
+  if(p.status !== 'running' || !p.phaseEndAt){ stopPomodoroTicking(); return; }
+  const remainingSec = (new Date(p.phaseEndAt) - new Date())/1000;
+  if(remainingSec <= 0){
+    completePomodoroPhase(p.phaseEndAt);
+    p.phaseEndAt = new Date(Date.now() + phaseDuration(p.phase)*1000).toISOString();
+    saveState();
+    render();
+  } else {
+    updatePomodoroDisplay(remainingSec);
+    updateRaceBarsDisplay();
+  }
+}
+function catchUpPomodoro(){
+  ensureFreshPomodoroDay();
+  const p = state.pomodoro;
+  if(p.status === 'running' && p.phaseEndAt && new Date(p.phaseEndAt) <= new Date()){
+    completePomodoroPhase(p.phaseEndAt);
+    p.phaseEndAt = new Date(Date.now() + phaseDuration(p.phase)*1000).toISOString();
+    saveState();
+  }
+  if(p.status === 'running') ensurePomodoroTicking();
+}
+function updatePomodoroDisplay(remainingSec){
+  const el = document.getElementById('pomodoro-remaining');
+  if(el) el.textContent = fmtMMSS(remainingSec);
+}
+function updateRaceBarsDisplay(){
+  const el = document.getElementById('race-bars-section');
+  if(el && activeTab==='today') el.innerHTML = raceBarsInnerHtml();
+}
+
+/* ---------- study time & best-day ghost ---------- */
+function dailyTimerTotals(){
+  const totals = {};
+  state.timerSessions.forEach(s=>{ totals[s.date] = (totals[s.date]||0) + s.minutes; });
+  return totals;
+}
+function findBestDay(totals){
+  let best = null, bestMin = -1;
+  Object.keys(totals).forEach(d=>{
+    if(d === todayStr()) return;
+    if(totals[d] > bestMin){ bestMin = totals[d]; best = d; }
+  });
+  return best;
+}
+function dayFirstSessionStart(dateStr){
+  const sessions = state.timerSessions.filter(s=>s.date===dateStr).sort((a,b)=> new Date(a.startedAt)-new Date(b.startedAt));
+  return sessions.length ? sessions[0].startedAt : null;
+}
+function cumulativeAtElapsed(dateStr, elapsedMinutes){
+  const start = dayFirstSessionStart(dateStr);
+  if(!start) return 0;
+  const cutoff = new Date(new Date(start).getTime() + elapsedMinutes*60000);
+  return state.timerSessions
+    .filter(s => s.date===dateStr && new Date(s.endedAt) <= cutoff)
+    .reduce((a,s)=>a+s.minutes, 0);
+}
+function todayTimerTotal(){
+  const d = todayStr();
+  return state.timerSessions.filter(s=>s.date===d).reduce((a,s)=>a+s.minutes,0);
+}
+function todayElapsedMinutes(){
+  if(!state.pomodoro.todayStartedAt) return 0;
+  return Math.max(0, (Date.now() - new Date(state.pomodoro.todayStartedAt).getTime())/60000);
+}
+
+/* ---------- state mutations ---------- */
+function recordSession(trackId, subjectId, understanding, minutes){
+  const subj = state.tracks[trackId].subjects.find(s=>s.id===subjectId);
+  if(!subj) return;
+  const prevStage = subj.reviewStage || 0;
+  let newStage = prevStage;
+  if(understanding >= 70) newStage = Math.min(prevStage+1, INTERVALS.length-1);
+  else if(understanding < 40) newStage = 0;
+  subj.understanding = understanding;
+  subj.reviewStage = newStage;
+  subj.lastStudied = todayStr();
+  state.studyLog.push({ date: todayStr(), trackId, subjectId, understanding, minutes: minutes||0, loggedAt: new Date().toISOString() });
+  markCompletion(trackId, subjectId);
+  updateStreak();
+  saveState();
+}
+function markCompletion(trackId, subjectId){
+  const d = todayStr();
+  if(!state.completions[d]) state.completions[d] = [];
+  const key = trackId+':'+subjectId;
+  if(!state.completions[d].includes(key)) state.completions[d].push(key);
+}
+function unmarkCompletion(trackId, subjectId){
+  const d = todayStr();
+  const key = trackId+':'+subjectId;
+  if(state.completions[d]) state.completions[d] = state.completions[d].filter(x=>x!==key);
+  saveState();
+}
+function updateStreak(){
+  const d = todayStr();
+  if(state.streak.lastDate === d) return;
+  if(state.streak.lastDate){
+    const gap = daysBetween(state.streak.lastDate, d);
+    if(gap === 1) state.streak.current += 1;
+    else state.streak.current = 1;
+  } else {
+    state.streak.current = 1;
+  }
+  state.streak.lastDate = d;
+  if(state.streak.current > state.streak.best) state.streak.best = state.streak.current;
+}
+function addSubject(trackId){
+  const input = document.querySelector('[data-new-subject="'+trackId+'"]');
+  const name = input && input.value.trim();
+  if(!name) return;
+  state.tracks[trackId].subjects.push({ id:uid(), name, understanding:20, lastStudied:null, reviewStage:0 });
+  input.value = '';
+  saveState();
+}
+function deleteSubject(trackId, subjectId){
+  state.tracks[trackId].subjects = state.tracks[trackId].subjects.filter(s=>s.id!==subjectId);
+  saveState();
+}
+function addManualTask(){
+  const input = document.getElementById('manual-task-input');
+  const text = input && input.value.trim();
+  if(!text) return;
+  const d = todayStr();
+  if(!state.manualTasks[d]) state.manualTasks[d] = [];
+  state.manualTasks[d].push({ id:uid(), text, done:false });
+  input.value = '';
+  saveState();
+}
+function toggleManualTask(id){
+  const d = todayStr();
+  const list = state.manualTasks[d] || [];
+  const item = list.find(x=>x.id===id);
+  if(item) item.done = !item.done;
+  saveState();
+}
+function resetAll(){
+  state = seedState();
+  activeTab = 'today';
+  saveState();
+}
+
+/* ---------- svg ---------- */
+function decaySvg(subject){
+  const W=220,H=60,padL=6,padR=6,padT=8,padB=14;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  if(!subject.lastStudied){
+    return '<svg viewBox="0 0 '+W+' '+H+'" class="decay-svg"><text x="'+(W/2)+'" y="'+(H/2)+'" text-anchor="middle" class="decay-empty">未学習</text></svg>';
+  }
+  const stage = Math.min(subject.reviewStage||0, INTERVALS.length-1);
+  const halfLife = INTERVALS[stage];
+  const daysSince = daysBetween(subject.lastStudied, todayStr());
+  const xMax = Math.max(halfLife*1.5, daysSince+2, 2);
+  const steps = 24;
+  const pts = [];
+  for(let i=0;i<=steps;i++){
+    const x = xMax*i/steps;
+    const y = subject.understanding * Math.exp(-x/halfLife);
+    pts.push([x,y]);
+  }
+  const xScale = x => padL + (x/xMax)*plotW;
+  const yScale = y => padT + (1 - Math.min(y,100)/100) * plotH;
+  const pathD = pts.map((p,i)=> (i===0?'M':'L') + xScale(p[0]).toFixed(1) + ',' + yScale(p[1]).toFixed(1)).join(' ');
+  const mecY = yScale(50);
+  const nowX = xScale(daysSince);
+  const nowY = yScale(subject.understanding * Math.exp(-daysSince/halfLife));
+  const nextX = xScale(halfLife);
+  const isDue = daysSince >= halfLife;
+  const curveColor = isDue ? 'var(--red)' : 'var(--green)';
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="decay-svg">' +
+    '<line x1="'+padL+'" y1="'+mecY.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+mecY.toFixed(1)+'" class="decay-mec"/>' +
+    '<line x1="'+nextX.toFixed(1)+'" y1="'+padT+'" x2="'+nextX.toFixed(1)+'" y2="'+(H-padB)+'" class="decay-next"/>' +
+    '<path d="'+pathD+'" fill="none" stroke="'+curveColor+'" stroke-width="2"/>' +
+    '<circle cx="'+nowX.toFixed(1)+'" cy="'+nowY.toFixed(1)+'" r="3.5" fill="'+curveColor+'"/>' +
+    '</svg>';
+}
+
+/* ---------- render ---------- */
+function tabBtn(id,label){
+  return '<button class="tab-btn '+(activeTab===id?'active':'')+'" data-action="switch-tab" data-tab="'+id+'">'+label+'</button>';
+}
+const WEEKDAYS = ['日','月','火','水','木','金','土'];
+function currentTimeStr(){
+  const t = new Date();
+  return String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+}
+function brandIconSvg(){
+  return '<svg viewBox="0 0 32 32" width="30" height="30" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M4 9 Q 11 9 15 17 T 28 23" fill="none" stroke="var(--c-kokushi)" stroke-width="2.5" stroke-linecap="round"/>' +
+    '<circle cx="28" cy="23" r="2.6" fill="var(--c-teiki)"/>' +
+  '</svg>';
+}
+function renderHeader(){
+  const d = new Date();
+  const dateLabel = d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日（'+WEEKDAYS[d.getDay()]+'）';
+  return '<header class="app-header">' +
+    '<div class="header-main">' +
+      '<div class="brand"><span class="brand-mark">'+brandIconSvg()+'</span><div>' +
+        '<h1>Recurve</h1><p class="subtitle">複数の試験を、ひとつの計画で。</p>' +
+      '</div></div>' +
+      '<div class="header-meta">' +
+        '<div class="today-date">'+dateLabel+'<span class="time-sep">｜</span><span id="current-clock">'+currentTimeStr()+'</span></div>' +
+        '<div class="streak">🔥 連続 '+state.streak.current+'日 <span class="streak-best">（最長 '+state.streak.best+'日）</span></div>' +
+      '</div>' +
+    '</div>' +
+    '<nav class="tabs">'+tabBtn('today','今日')+tabBtn('karute','進捗')+tabBtn('plan','計画')+tabBtn('settings','設定')+'</nav>' +
+  '</header>';
+}
+
+function pomodoroInnerHtml(){
+  const p = state.pomodoro;
+  const remainingSec = p.status === 'running' && p.phaseEndAt
+    ? Math.max(0, (new Date(p.phaseEndAt) - new Date())/1000)
+    : (p.remainingWhenPaused != null ? p.remainingWhenPaused : phaseDuration(p.phase));
+  const phaseClass = p.phase==='work' ? 'phase-work' : (p.phase==='short_break' ? 'phase-short' : 'phase-long');
+  const btnLabel = p.status==='running' ? '一時停止' : (p.status==='paused' ? '再開' : '開始');
+  return '<div class="pomodoro-box">' +
+    '<div class="pomodoro-phase-row"><span class="pomodoro-phase-badge '+phaseClass+'">'+phaseLabel(p.phase)+'</span>' +
+    '<span class="pomodoro-cycle">サイクル '+p.cycle+'/4</span></div>' +
+    '<div class="pomodoro-time" id="pomodoro-remaining">'+fmtMMSS(remainingSec)+'</div>' +
+    '<div class="pomodoro-controls">' +
+      '<button class="btn-primary" data-action="pomodoro-toggle">'+btnLabel+'</button>' +
+      '<button class="btn-outline" data-action="pomodoro-reset">リセット</button>' +
+    '</div>' +
+  '</div>';
+}
+function raceBarsInnerHtml(){
+  const totals = dailyTimerTotals();
+  const bestDay = findBestDay(totals);
+  const todayTotal = todayTimerTotal();
+  const elapsed = todayElapsedMinutes();
+
+  if(!bestDay){
+    const scale = Math.max(state.dailyMinutes,1);
+    const pct = Math.min(100, Math.round(todayTotal/scale*100));
+    return '<div class="race-row"><span class="race-label">🏃 今日のあなた</span>' +
+      '<div class="studytime-bar"><div class="studytime-fill" style="width:'+pct+'%"></div></div>' +
+      '<span class="race-value">'+todayTotal+'分</span></div>' +
+      '<p class="ghost-caption">まだ自己ベストの記録がありません。タイマーで学習を記録すると、次回から自己ベストのゴーストと競争できます。</p>';
+  }
+
+  const bestTotal = totals[bestDay];
+  const scale = Math.max(bestTotal, 1);
+  const ghostAtElapsed = cumulativeAtElapsed(bestDay, elapsed);
+  const ghostPct = Math.min(100, Math.round(ghostAtElapsed/scale*100));
+  const todayPct = Math.min(100, Math.round(todayTotal/scale*100));
+  const diff = todayTotal - ghostAtElapsed;
+  const diffText = diff > 0 ? ('+'+Math.round(diff)+'分リード') : (diff < 0 ? (Math.round(Math.abs(diff))+'分ビハインド') : '同着');
+  const diffClass = diff >= 0 ? 'ghost-ahead' : 'ghost-behind';
+  const newRecord = todayTotal > bestTotal ? '<p class="ghost-caption ghost-ahead">🎉 自己ベスト更新中！</p>' : '';
+
+  return '<div class="race-row"><span class="race-label">👻 自己ベスト（'+formatDate(bestDay)+'・計'+bestTotal+'分）</span>' +
+    '<div class="studytime-bar"><div class="studytime-fill ghost-fill" style="width:'+ghostPct+'%"></div></div>' +
+    '<span class="race-value">'+Math.round(ghostAtElapsed)+'分</span></div>' +
+    '<div class="race-row"><span class="race-label">🏃 今日のあなた</span>' +
+    '<div class="studytime-bar"><div class="studytime-fill" style="width:'+todayPct+'%"></div></div>' +
+    '<span class="race-value">'+todayTotal+'分</span></div>' +
+    (state.pomodoro.todayStartedAt ?
+      '<p class="ghost-caption">開始から'+Math.round(elapsed)+'分経過時点の比較 ／ <span class="'+diffClass+'">'+diffText+'</span></p>'
+      : '<p class="ghost-caption">タイマーを開始すると、自己ベストとのリアルタイム比較が始まります。</p>') +
+    newRecord;
+}
+function studyTimeInnerHtml(){
+  return '<h2 class="section-title">学習タイマー</h2>' +
+    pomodoroInnerHtml() +
+    '<div id="race-bars-section" class="race-bars">' + raceBarsInnerHtml() + '</div>';
+}
+function renderToday(){
+  const alloc = computeAllocation();
+  const cards = TRACK_ORDER.map(k=>{
+    const t = state.tracks[k];
+    const days = daysUntil(t.examDate);
+    const avg = t.subjects.length ? Math.round(t.subjects.reduce((a,s)=>a+s.understanding,0)/t.subjects.length) : 0;
+    const gap = t.targetScore - avg;
+    return '<div class="track-card tc-'+k+'">' +
+      '<div class="track-card-top"><span class="track-chip chip-'+k+'">'+t.short+'</span><span class="alloc-pct">配分 '+Math.round(alloc[k])+'%</span></div>' +
+      '<div class="countdown">'+Math.max(days,0)+'<span class="countdown-unit">日</span></div>' +
+      '<div class="track-examdate">'+formatDate(t.examDate)+'</div>' +
+      '<div class="track-gap">現在推定 '+avg+'% ／ 目標 '+t.targetScore+'%'+(gap>0?'（あと'+gap+'pt）':'（達成ライン到達）')+'</div>' +
+    '</div>';
+  }).join('');
+
+  const dueList = [];
+  TRACK_ORDER.forEach(k=>{
+    state.tracks[k].subjects.forEach(s=>{
+      const info = reviewInfo(s);
+      if(info.isDue && !info.neverStudied) dueList.push({ trackId:k, subject:s, info });
+    });
+  });
+  const dueHtml = dueList.length ? (
+    '<section class="section"><h2 class="section-title">本日の復習期限 <span class="due-count">'+dueList.length+'件</span></h2>' +
+    '<div class="due-list">' + dueList.map(d=>
+      '<div class="due-item"><span class="track-chip chip-'+d.trackId+'">'+state.tracks[d.trackId].short+'</span>' +
+      '<span class="due-name">'+escapeHtml(d.subject.name)+'</span>' +
+      '<span class="due-level">推定理解度 '+Math.round(d.info.level)+'%</span>' +
+      '<button class="btn-small" data-action="open-rating" data-track="'+d.trackId+'" data-subject="'+d.subject.id+'">記録する</button></div>'
+    ).join('') + '</div></section>'
+  ) : '';
+
+  const tasks = generateTodayTasks();
+  const completions = state.completions[todayStr()] || [];
+  const tasksHtml = tasks.length ? tasks.map(t=>{
+    const key = t.trackId+':'+t.subjectId;
+    const done = completions.includes(key);
+    const action = done ? 'toggle-uncomplete' : 'open-rating';
+    return '<div class="task-item '+(done?'done':'')+'">' +
+      '<label class="task-check"><input type="checkbox" '+(done?'checked':'')+' data-action="'+action+'" data-track="'+t.trackId+'" data-subject="'+t.subjectId+'"><span class="checkmark"></span></label>' +
+      '<span class="track-chip chip-'+t.trackId+'">'+state.tracks[t.trackId].short+'</span>' +
+      '<span class="task-name">'+escapeHtml(t.subjectName)+'</span>' +
+      '<span class="task-understanding">理解度 '+Math.round(t.understanding)+'%</span>' +
+      '<span class="task-activity">'+t.activity+'</span>' +
+      '<span class="task-minutes">'+t.minutes+'分</span>' +
+    '</div>';
+  }).join('') : '<p class="empty-hint">科目が登録されていません。「進捗」タブから科目を追加してください。</p>';
+
+  return '<div class="track-cards">'+cards+'</div>' +
+    '<section class="section" id="studytime-section">' + studyTimeInnerHtml() + '</section>' +
+    dueHtml +
+    '<section class="section"><h2 class="section-title">今日のタスク</h2>' +
+      '<div class="task-list">'+tasksHtml+'</div>' +
+      renderManualTasks() +
+      '<div class="manual-add"><input type="text" id="manual-task-input" placeholder="ほかにやることを追加" class="text-input">' +
+      '<button class="btn-small" data-action="add-manual-task">追加</button></div>' +
+    '</section>';
+}
+function renderManualTasks(){
+  const d = todayStr();
+  const list = state.manualTasks[d] || [];
+  if(!list.length) return '';
+  return '<div class="task-list">' + list.map(x=>
+    '<div class="task-item '+(x.done?'done':'')+'"><label class="task-check"><input type="checkbox" '+(x.done?'checked':'')+' data-action="toggle-manual-task" data-id="'+x.id+'"><span class="checkmark"></span></label><span class="task-name">'+escapeHtml(x.text)+'</span></div>'
+  ).join('') + '</div>';
+}
+
+function renderKarute(){
+  const tip = '<p class="tip-line">各科目のグラフは「忘却曲線」（時間とともに記憶が薄れていく様子）のイメージです。破線を下回る前に「記録する」で復習すると、次に薄れるまでの間隔がだんだん伸びていきます。</p>';
+  const body = TRACK_ORDER.map(k=>{
+    const t = state.tracks[k];
+    const list = t.subjects.map(s=> Object.assign({}, s, { info: reviewInfo(s) }));
+    const cards = list.map(s=> renderSubjectCard(k,s)).join('') || '<p class="empty-hint">科目がまだありません。下から追加してください。</p>';
+    return '<section class="section">' +
+      '<div class="track-header"><span class="track-chip chip-'+k+'">'+t.short+'</span><h2 class="section-title">'+t.label+'</h2>' +
+      '<span class="track-header-date">'+formatDate(t.examDate)+'（残り'+daysUntil(t.examDate)+'日）</span></div>' +
+      '<div class="subject-grid">'+cards+'</div>' +
+      '<div class="add-subject-row"><input type="text" class="text-input" placeholder="科目名を追加" data-new-subject="'+k+'">' +
+      '<button class="btn-small" data-action="add-subject" data-track="'+k+'">＋ 科目を追加</button></div>' +
+    '</section>';
+  }).join('');
+  return tip + body;
+}
+function renderSubjectCard(trackId, s){
+  const dueClass = (s.info.isDue && !s.info.neverStudied) ? 'is-due' : '';
+  const key = trackId+':'+s.id;
+  const isConfirming = confirmingDelete === key;
+  const statusText = s.info.neverStudied ? '未学習' : (s.info.isDue ? '復習期限超過' : '次回 '+formatDate(s.info.nextReview));
+  return '<div class="subject-card '+dueClass+'">' +
+    '<div class="subject-card-top"><span class="subject-name">'+escapeHtml(s.name)+'</span>' +
+    '<button class="icon-btn" data-action="'+(isConfirming?'confirm-delete-subject':'ask-delete-subject')+'" data-track="'+trackId+'" data-subject="'+s.id+'">'+(isConfirming?'削除？':'✕')+'</button></div>' +
+    decaySvg(s) +
+    '<div class="subject-meta"><span>理解度 '+Math.round(s.understanding)+'%</span><span>'+statusText+'</span></div>' +
+    '<input type="range" min="0" max="100" value="'+Math.round(s.understanding)+'" class="range-input" data-bind="understanding" data-track="'+trackId+'" data-subject="'+s.id+'">' +
+    '<button class="btn-small btn-record" data-action="open-rating" data-track="'+trackId+'" data-subject="'+s.id+'">今日学習した内容を記録</button>' +
+  '</div>';
+}
+
+function renderPlan(){
+  const alloc = computeAllocation();
+  const allocBar = '<div class="alloc-bar">' + TRACK_ORDER.map(k=>
+    '<div class="alloc-seg bar-'+k+'" style="width:'+alloc[k]+'%"></div>'
+  ).join('') + '</div>' +
+  '<div class="alloc-legend">' + TRACK_ORDER.map(k=>
+    '<span><span class="legend-dot bar-'+k+'"></span>'+state.tracks[k].short+' '+Math.round(alloc[k])+'%（1日'+Math.round(state.dailyMinutes*alloc[k]/100)+'分）</span>'
+  ).join('') + '</div>';
+
+  const trackSections = TRACK_ORDER.map(k=>{
+    const t = state.tracks[k];
+    const days = daysUntil(t.examDate);
+    if(days <= 30){
+      const weights = subjectWeights(t.subjects).slice().sort((a,b)=>b.pct-a.pct);
+      const rows = weights.map(s=>
+        '<div class="weight-row"><span class="weight-name">'+escapeHtml(s.name)+'</span>' +
+        '<div class="weight-bar-track"><div class="weight-bar-fill bar-'+k+'" style="width:'+s.pct+'%"></div></div>' +
+        '<span class="weight-pct">'+Math.round(s.pct)+'%</span></div>'
+      ).join('') || '<p class="empty-hint">科目未登録</p>';
+      return '<section class="section"><h2 class="section-title"><span class="track-chip chip-'+k+'">'+t.short+'</span>'+t.label+'（残り'+days+'日・直前期）</h2>' +
+        '<p class="plan-tip">残り期間が短いため、理解度に応じた配分で総復習を進めましょう。最後の数日は暗記事項の見直しに充てるのがおすすめです。</p>' +
+        '<div class="weight-list">'+rows+'</div></section>';
+    } else {
+      const phases = computePhases(t);
+      const cards = phases.map(p=>
+        '<div class="phase-card"><div class="phase-label">'+p.label+'</div>' +
+        '<div class="phase-dates">'+formatDate(p.from)+' 〜 '+formatDate(p.to)+'（'+p.days+'日間）</div>' +
+        '<div class="phase-focus">'+p.focus+'</div></div>'
+      ).join('');
+      return '<section class="section"><h2 class="section-title"><span class="track-chip chip-'+k+'">'+t.short+'</span>'+t.label+'（残り'+days+'日）</h2>' +
+        '<div class="phase-list">'+cards+'</div></section>';
+    }
+  }).join('');
+
+  return '<section class="section"><h2 class="section-title">今後の時間配分（1日 '+state.dailyMinutes+'分）</h2>' + allocBar +
+    '<p class="plan-note">配分は各試験までの残り日数から自動計算されています（最低8%は必ず確保）。長期戦の科目も少しずつ触れ続けることで、直前期の負担を減らせます。</p></section>' +
+    trackSections;
+}
+
+function renderSettings(){
+  const rows = TRACK_ORDER.map(k=>{
+    const t = state.tracks[k];
+    return '<div class="settings-row"><span class="track-chip chip-'+k+'">'+t.short+'</span>' +
+      '<label>試験日 <input type="date" class="date-input" data-bind="examDate" data-track="'+k+'" value="'+t.examDate+'"></label>' +
+      '<label>目標点数 <input type="number" min="0" max="100" class="number-input" data-bind="targetScore" data-track="'+k+'" value="'+t.targetScore+'">点</label>' +
+    '</div>';
+  }).join('');
+  return '<section class="section"><h2 class="section-title">試験情報</h2>'+rows+'</section>' +
+    '<section class="section"><h2 class="section-title">1日の学習可能時間</h2>' +
+      '<label>合計 <input type="number" min="0" step="10" class="number-input" data-bind="dailyMinutes" value="'+state.dailyMinutes+'"> 分／日</label>' +
+    '</section>' +
+    '<section class="section"><h2 class="section-title">データ管理</h2>' +
+      '<button class="btn-outline-danger" data-action="'+(confirmingReset?'confirm-reset':'ask-reset')+'">'+(confirmingReset?'本当にすべて削除しますか？（もう一度押すと実行）':'すべてのデータをリセット')+'</button>' +
+    '</section>';
+}
+
+function renderModal(){
+  if(!pendingRating) return '';
+  const { trackId, subjectId } = pendingRating;
+  const t = state.tracks[trackId];
+  const s = t && t.subjects.find(x=>x.id===subjectId);
+  if(!s) return '';
+  return '<div class="modal-overlay" data-action="close-modal-bg">' +
+    '<div class="modal-box">' +
+      '<h3>'+escapeHtml(s.name)+'</h3><p class="modal-sub">'+t.short+'・今日の学習を記録します</p>' +
+      '<label class="modal-label">理解度（学習後の自己評価）</label>' +
+      '<input type="range" min="0" max="100" value="'+Math.round(s.understanding)+'" id="modal-understanding" class="range-input">' +
+      '<div class="modal-value"><span id="modal-understanding-value">'+Math.round(s.understanding)+'</span>%</div>' +
+      '<label class="modal-label">学習時間（任意・分）</label>' +
+      '<input type="number" min="0" step="5" id="modal-minutes" class="number-input" placeholder="例: 30">' +
+      '<div class="modal-actions"><button class="btn-outline" data-action="close-modal">キャンセル</button>' +
+      '<button class="btn-primary" data-action="save-rating" data-track="'+trackId+'" data-subject="'+subjectId+'">記録する</button></div>' +
+    '</div>' +
+  '</div>';
+}
+
+function render(){
+  const app = document.getElementById('app');
+  let content = '';
+  if(activeTab==='today') content = renderToday();
+  else if(activeTab==='karute') content = renderKarute();
+  else if(activeTab==='plan') content = renderPlan();
+  else content = renderSettings();
+  app.innerHTML =
+    '<div class="app-shell">' + renderHeader() + '<main id="content">' + content + '</main></div>' +
+    renderModal();
+}
+
+/* ---------- toast ---------- */
+function showToast(msg){
+  const c = document.getElementById('toast-container');
+  if(!c) return;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(()=>{ el.classList.add('toast-out'); setTimeout(()=>el.remove(),300); }, 1800);
+}
+
+/* ---------- bound field helper ---------- */
+function getBoundTarget(t){
+  const trackId = t.dataset.track;
+  const subjectId = t.dataset.subject;
+  if(subjectId){
+    const subj = state.tracks[trackId].subjects.find(s=>s.id===subjectId);
+    return { obj: subj, key: t.dataset.bind };
+  } else if(trackId){
+    return { obj: state.tracks[trackId], key: t.dataset.bind };
+  }
+  return { obj: state, key: t.dataset.bind };
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', function(e){
+  if(e.target.dataset && e.target.dataset.action === 'close-modal-bg'){
+    pendingRating = null; render(); return;
+  }
+  const btn = e.target.closest('[data-action]');
+  if(!btn) return;
+  const action = btn.dataset.action;
+  if(action === 'close-modal-bg') return;
+  switch(action){
+    case 'switch-tab':
+      activeTab = btn.dataset.tab; confirmingDelete = null; confirmingReset = false; render(); break;
+    case 'open-rating':
+      pendingRating = { trackId: btn.dataset.track, subjectId: btn.dataset.subject }; render(); break;
+    case 'close-modal':
+      pendingRating = null; render(); break;
+    case 'save-rating': {
+      const u = Number(document.getElementById('modal-understanding').value);
+      const m = Number(document.getElementById('modal-minutes').value) || 0;
+      recordSession(btn.dataset.track, btn.dataset.subject, u, m);
+      pendingRating = null;
+      showToast('記録しました');
+      render();
+      break;
+    }
+    case 'toggle-uncomplete':
+      unmarkCompletion(btn.dataset.track, btn.dataset.subject); render(); break;
+    case 'ask-delete-subject':
+      confirmingDelete = btn.dataset.track+':'+btn.dataset.subject; render(); break;
+    case 'confirm-delete-subject':
+      deleteSubject(btn.dataset.track, btn.dataset.subject); confirmingDelete = null; render(); break;
+    case 'add-subject':
+      addSubject(btn.dataset.track); render(); break;
+    case 'ask-reset':
+      confirmingReset = true; render(); break;
+    case 'confirm-reset':
+      resetAll(); render(); break;
+    case 'add-manual-task':
+      addManualTask(); render(); break;
+    case 'toggle-manual-task':
+      toggleManualTask(btn.dataset.id); render(); break;
+    case 'pomodoro-toggle':
+      pomodoroStartPause(); render(); break;
+    case 'pomodoro-reset':
+      pomodoroReset(); render(); break;
+  }
+});
+
+document.addEventListener('input', function(e){
+  const t = e.target;
+  if(t.id === 'modal-understanding'){
+    const disp = document.getElementById('modal-understanding-value');
+    if(disp) disp.textContent = t.value;
+    return;
+  }
+  if(!t.dataset.bind) return;
+  const { obj, key } = getBoundTarget(t);
+  if(!obj) return;
+  let val = t.value;
+  if(t.type==='number' || t.type==='range') val = Number(val);
+  obj[key] = val;
+  saveState();
+});
+
+document.addEventListener('change', function(e){
+  const t = e.target;
+  if(!t.dataset.bind) return;
+  saveState();
+  render();
+});
+
+/* ---------- init ---------- */
+loadState();
+setInterval(function(){
+  const el = document.getElementById('current-clock');
+  if(el) el.textContent = currentTimeStr();
+  const stEl = document.getElementById('studytime-section');
+  if(stEl && activeTab==='today') stEl.innerHTML = studyTimeInnerHtml();
+}, 60000);
+</script>
+</body>
+</html>
