@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>書類を動画化｜3パート・要点まとめ付きスライド動画メーカー</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --paper:#F1F4EF;
+  --card:#FCFBF8;
+  --ink:#2A2E28;
+  --ink-soft:#6B7268;
+  --line:#DCE0D6;
+
+  --p1:#C88A2E; --p1-tint:#F4E3C4; --p1-deep:#8A5A1E;
+  --p2:#35406B; --p2-tint:#E4E7F0; --p2-deep:#232B4A;
+  --p3:#164F46; --p3-tint:#DCEAE6; --p3-deep:#0E3830;
+
+  --red:#B14A3B; --red-tint:#F5DEDA;
+  --green:#1F6F63;
+  --radius:16px;
+  --shadow:0 8px 30px rgba(30,40,25,.10);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Zen Kaku Gothic New', sans-serif;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+  line-height:1.7;
+}
+@media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
+:focus-visible{ outline:2px solid var(--green); outline-offset:2px; }
+
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;}
+header.top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
+header.top h1{font-size:22px;font-weight:900;margin:0;letter-spacing:.02em;}
+header.top .sub{color:var(--ink-soft);font-size:13px;}
+.tagline{color:var(--ink-soft);font-size:13.5px;margin:0 0 22px;}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:20px;}
+.card h2{font-size:15px;font-weight:800;margin:0 0 14px;display:flex;align-items:center;gap:8px;}
+.card h2 .n{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--ink);color:#fff;font-size:12px;align-items:center;justify-content:center;font-weight:700;}
+
+label.field{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:0 0 6px;}
+input[type=text],input[type=date],input[type=number],textarea,select{
+  width:100%;font-family:inherit;font-size:14px;color:var(--ink);
+  background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+}
+textarea{resize:vertical;min-height:180px;line-height:1.7;}
+.row{display:flex;gap:14px;flex-wrap:wrap;}
+.row > div{flex:1;min-width:150px;}
+.hint{font-size:11.5px;color:var(--ink-soft);margin-top:5px;}
+
+.btn{font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;border:none;border-radius:10px;padding:11px 18px;transition:.15s;}
+.btn:active{transform:translateY(1px);}
+.btn-primary{background:var(--ink);color:#fff;}
+.btn-primary:hover{background:#000;}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+.btn-ghost:hover{background:var(--paper);}
+.btn-sm{padding:7px 12px;font-size:12.5px;}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px;}
+
+.filebtn{position:relative;overflow:hidden;display:inline-flex;}
+.filebtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+/* Parts overview */
+.parts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+@media(max-width:720px){.parts{grid-template-columns:1fr;}}
+.part-chip{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff;position:relative;overflow:hidden;}
+.part-chip .bar{position:absolute;left:0;top:0;bottom:0;width:6px;}
+.part-chip.p1 .bar{background:var(--p1);} .part-chip.p2 .bar{background:var(--p2);} .part-chip.p3 .bar{background:var(--p3);}
+.part-chip .plabel{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--ink-soft);}
+.part-chip .ptitle{font-size:14.5px;font-weight:800;margin:3px 0 8px;line-height:1.4;}
+.part-chip .meta{font-size:12px;color:var(--ink-soft);font-family:'JetBrains Mono',monospace;}
+.part-chip .meta b{color:var(--ink);}
+
+.summary-line{margin-top:14px;font-size:13px;color:var(--ink-soft);}
+.summary-line b{color:var(--ink);font-size:15px;font-family:'JetBrains Mono',monospace;}
+
+/* Player */
+#playerCard{display:none;}
+.stage-outer{background:#12140f;border-radius:14px;padding:0;overflow:hidden;position:relative;aspect-ratio:16/9;}
+.stage{position:absolute;inset:0;display:flex;flex-direction:column;padding:6% 7%;color:#F4F5F0;}
+.stage .kicker{font-size:clamp(11px,1.6vw,15px);font-weight:700;letter-spacing:.1em;opacity:.85;text-transform:uppercase;}
+.stage .kicker .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle;}
+.stage h3{font-size:clamp(20px,3.6vw,40px);font-weight:900;margin:.35em 0 .5em;line-height:1.28;}
+.stage ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:.55em;}
+.stage ul li{font-size:clamp(14px,2.1vw,23px);line-height:1.5;padding-left:1.4em;position:relative;}
+.stage ul li::before{content:"";position:absolute;left:0;top:.62em;width:.55em;height:.55em;border-radius:2px;background:currentColor;opacity:.55;}
+.stage.is-title{align-items:flex-start;justify-content:center;}
+.stage.is-title .big{font-size:clamp(26px,5vw,60px);font-weight:900;line-height:1.2;}
+.stage.is-title .pnum{font-size:clamp(13px,2vw,20px);font-weight:700;opacity:.8;letter-spacing:.12em;margin-bottom:.4em;}
+.stage.is-summary{background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,0));}
+.stage.is-summary .badge{display:inline-flex;align-items:center;gap:8px;font-size:clamp(12px,1.8vw,17px);font-weight:800;padding:.35em .9em;border-radius:999px;background:rgba(255,255,255,.14);align-self:flex-start;margin-bottom:.4em;}
+.stage .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-size:clamp(10px,1.4vw,13px);opacity:.7;font-family:'JetBrains Mono',monospace;}
+
+/* progress + controls */
+.pbar{height:6px;background:rgba(255,255,255,.14);cursor:pointer;position:relative;}
+.pbar .fill{height:100%;width:0;background:#fff;transition:width .2s linear;}
+.pbar .chapters{position:absolute;inset:0;}
+.pbar .chmark{position:absolute;top:0;bottom:0;width:2px;background:rgba(0,0,0,.35);}
+.controls{display:flex;align-items:center;gap:12px;background:#1b1e17;padding:10px 14px;color:#F4F5F0;flex-wrap:wrap;}
+.controls button{background:transparent;border:none;color:#F4F5F0;cursor:pointer;font-size:18px;padding:4px 6px;border-radius:8px;}
+.controls button:hover{background:rgba(255,255,255,.12);}
+.controls .time{font-family:'JetBrains Mono',monospace;font-size:12.5px;opacity:.85;}
+.controls .spacer{flex:1;}
+.controls .toggle{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.9;}
+.controls select{width:auto;background:#2a2e25;color:#F4F5F0;border-color:#3a3f34;font-size:12px;padding:5px 8px;}
+
+.chaplist{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.chaplist button{font-family:inherit;font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;cursor:pointer;color:var(--ink);}
+.chaplist button.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+.chaplist button .c{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+
+/* availability gate */
+.gate{position:absolute;inset:0;background:rgba(10,12,8,.9);backdrop-filter:blur(3px);display:none;flex-direction:column;align-items:center;justify-content:center;color:#F4F5F0;text-align:center;padding:8%;z-index:5;}
+.gate.show{display:flex;}
+.gate .ico{font-size:38px;margin-bottom:10px;}
+.gate h4{font-size:clamp(16px,2.4vw,24px);font-weight:900;margin:0 0 8px;}
+.gate p{font-size:13.5px;opacity:.85;margin:2px 0;}
+.gate .cd{font-family:'JetBrains Mono',monospace;font-size:clamp(18px,3vw,30px);font-weight:700;margin:10px 0;}
+.gate .btn{margin-top:14px;}
+
+.status{font-size:12.5px;padding:9px 14px;border-radius:10px;margin-top:14px;display:none;}
+.status.ok{background:var(--p3-tint);color:var(--p3-deep);display:block;}
+.status.warn{background:var(--red-tint);color:var(--red);display:block;}
+.avail-badge{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;padding:5px 12px;border-radius:999px;margin-left:auto;}
+.avail-badge.open{background:var(--p3-tint);color:var(--p3-deep);}
+.avail-badge.soon{background:var(--p1-tint);color:var(--p1-deep);}
+.avail-badge.closed{background:var(--red-tint);color:var(--red);}
+.avail-badge .d{width:8px;height:8px;border-radius:50%;background:currentColor;}
+
+.foot-note{color:var(--ink-soft);font-size:11.5px;text-align:center;margin-top:30px;line-height:1.8;}
+details.help{margin-top:10px;}
+details.help summary{cursor:pointer;font-size:12.5px;color:var(--ink-soft);font-weight:700;}
+details.help .body{font-size:12.5px;color:var(--ink-soft);margin-top:8px;line-height:1.9;}
+kbd{font-family:'JetBrains Mono',monospace;background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>書類を動画化</h1>
+    <span class="sub">3パート構成・要点まとめ付き・視聴期間つきスライド動画メーカー</span>
+  </header>
+  <p class="tagline">書類を貼り付ける（または .txt / .md を読み込む）と、内容を <b>3つのまとまり</b> に分割し、各パートを <b>20分未満</b> のスライド動画（末尾に <b>要点まとめスライド</b>）として再生します。<b>1週間の視聴期間</b> を設定できます。</p>
+
+  <!-- 1. 入力 -->
+  <div class="card">
+    <h2><span class="n">1</span> 書類を入力</h2>
+    <div class="row" style="margin-bottom:14px;">
+      <div style="flex:2;">
+        <label class="field" for="titleIn">タイトル（動画名）</label>
+        <input type="text" id="titleIn" placeholder="例：新人研修 第3回 コンプライアンス基礎">
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:10px;">
+        <span class="btn btn-ghost btn-sm filebtn">📄 .txt / .md を読み込む
+          <input type="file" id="fileIn" accept=".txt,.md,.markdown,text/plain,text/markdown">
+        </span>
+        <button class="btn btn-ghost btn-sm" id="sampleBtn" type="button">サンプルを入れる</button>
+      </div>
+    </div>
+    <label class="field" for="docIn">本文（見出しは <code>#</code> / <code>##</code>、または空行区切りの段落で認識します）</label>
+    <textarea id="docIn" placeholder="ここに書類の本文を貼り付けてください。&#10;&#10;# 大見出しがあればパート／章の区切りに使われます&#10;## 小見出しはスライドの見出しになります&#10;&#10;段落は自動でスライドに分割され、各パートの最後に要点まとめスライドが挿入されます。"></textarea>
+    <div class="hint" id="charCount">0 文字</div>
+  </div>
+
+  <!-- 2. 設定 -->
+  <div class="card">
+    <h2><span class="n">2</span> 動画の設定</h2>
+    <div class="row">
+      <div>
+        <label class="field">各パートの目標尺（分）— 各20分未満</label>
+        <div class="row" style="gap:8px;">
+          <input type="number" id="min1" min="1" max="19" value="18" style="max-width:90px;">
+          <input type="number" id="min2" min="1" max="19" value="17" style="max-width:90px;">
+          <input type="number" id="min3" min="1" max="19" value="15" style="max-width:90px;">
+        </div>
+        <div class="hint">合計の目安：<b id="totalMin">50</b> 分（例に合わせ 18・17・15 分）</div>
+      </div>
+      <div>
+        <label class="field" for="startDate">視聴 公開開始日</label>
+        <input type="date" id="startDate">
+        <div class="hint">この日から <b id="windowDays2">7</b> 日間だけ視聴できます（「1週間前からいつでも」）。</div>
+      </div>
+      <div style="max-width:150px;">
+        <label class="field" for="windowDays">視聴可能日数</label>
+        <input type="number" id="windowDays" min="1" max="60" value="7">
+        <div class="hint">既定は 7 日 = 1週間</div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="buildBtn" type="button">▶ 動画を生成</button>
+      <div class="toggle" style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);">
+        <input type="checkbox" id="ttsChk" checked><label for="ttsChk">日本語ナレーションを付ける（読み上げ）</label>
+      </div>
+    </div>
+    <div class="status" id="buildStatus"></div>
+  </div>
+
+  <!-- 3. 構成プレビュー -->
+  <div class="card" id="overviewCard" style="display:none;">
+    <h2><span class="n">3</span> 構成プレビュー
+      <span class="avail-badge" id="availBadge"><span class="d"></span><span class="t"></span></span>
+    </h2>
+    <div class="parts" id="partsGrid"></div>
+    <div class="summary-line">総尺 <b id="ovTotal">—</b> ／ スライド <b id="ovSlides">—</b> 枚 ／ 各パート末に <b>要点まとめ</b> を自動挿入</div>
+  </div>
+
+  <!-- 4. プレーヤー -->
+  <div class="card" id="playerCard">
+    <h2><span class="n">4</span> 再生</h2>
+    <div class="stage-outer" id="stageOuter">
+      <div class="stage" id="stage"></div>
+      <div class="gate" id="gate">
+        <div class="ico" id="gateIco">🔒</div>
+        <h4 id="gateTitle">まだ公開前です</h4>
+        <p id="gateMsg"></p>
+        <div class="cd" id="gateCd"></div>
+        <button class="btn btn-ghost btn-sm" id="gatePreview" type="button" style="color:#F4F5F0;border-color:rgba(255,255,255,.35);">作成者としてプレビュー（期間を無視）</button>
+      </div>
+    </div>
+    <div class="pbar" id="pbar"><div class="chapters" id="chapters"></div><div class="fill" id="pfill"></div></div>
+    <div class="controls">
+      <button id="playBtn" title="再生 / 一時停止 (Space)">▶</button>
+      <button id="prevBtn" title="前のスライド (←)">⏮</button>
+      <button id="nextBtn" title="次のスライド (→)">⏭</button>
+      <span class="time"><span id="tCur">0:00</span> / <span id="tTot">0:00</span></span>
+      <span class="spacer"></span>
+      <span class="time" id="slideIdx">1 / 1</span>
+      <label class="toggle"><input type="checkbox" id="ttsPlayChk" checked> 読み上げ</label>
+      <select id="voiceSel" title="音声"></select>
+    </div>
+    <div class="chaplist" id="chaplist"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm" id="fsBtn" type="button">⛶ フルスクリーン</button>
+      <button class="btn btn-ghost btn-sm" id="exportBtn" type="button">⬇ 共有用HTMLを書き出す</button>
+      <button class="btn btn-ghost btn-sm" id="webmBtn" type="button">🎞 動画ファイル(WebM)を書き出す（β）</button>
+      <span class="hint" id="webmStatus" style="margin:0;"></span>
+    </div>
+    <details class="help">
+      <summary>操作方法・仕組みについて</summary>
+      <div class="body">
+        <b>操作：</b> <kbd>Space</kbd> 再生/一時停止 ／ <kbd>←</kbd> <kbd>→</kbd> スライド移動 ／ 進行バーやチャプターのクリックで頭出し。<br>
+        <b>3分割：</b> 文字数がほぼ均等になるように本文を3つのまとまりへ配分します（<code>#</code> 大見出しがあれば優先して区切ります）。<br>
+        <b>尺：</b> タイマーモードでは各スライドの表示時間を文字量に応じて配分し、パート合計が目標尺（18/17/15分など・各20分未満）に一致します。読み上げONの場合はナレーション終了で次へ進むため、実尺は目安になります。<br>
+        <b>要点まとめ：</b> 各パートの各見出しの要点を抽出し、パート末尾にまとめスライドを自動生成します。<br>
+        <b>視聴期間：</b> 公開開始日から指定日数だけ視聴可能。期間外はロック画面を表示します（端末内 localStorage に保存）。<br>
+        <b>WebM書き出し：</b> Canvasを録画して実際の動画ファイルを保存します（ブラウザ制約により無音・字幕主体、タイマー尺で出力）。LMS等にアップして運用する用途向けです。
+      </div>
+    </details>
+  </div>
+
+  <p class="foot-note">
+    すべてブラウザ内で処理され、書類の内容が外部へ送信されることはありません。<br>
+    日本語読み上げには OS/ブラウザの音声合成（Web Speech API）を使用します。音声が無い環境ではタイマーで進行します。
+  </p>
+</div>
+
+<canvas id="recCanvas" width="1280" height="720" style="display:none;"></canvas>
+
+<script>
+"use strict";
+/* ============================================================
+   書類を動画化 — 3パート / 要点まとめ / 視聴期間つきプレーヤー
+   ============================================================ */
+
+const $ = (id)=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const fmt=(s)=>{s=Math.max(0,Math.round(s));const m=Math.floor(s/60),ss=s%60;return m+":"+String(ss).padStart(2,"0");};
+const PCOLORS=["#C88A2E","#35406B","#164F46"];
+const PCLASS=["p1","p2","p3"];
+const MAX_LINES_PER_SLIDE=5;          // 1スライドの本文行数
+const MAX_CHARS_PER_LINE=52;          // 1行の目安文字数（折り返し判断）
+const MIN_SLIDE_SEC=4.5;              // スライド最短表示秒
+const TITLE_SLIDE_SEC=6;              // タイトルスライド固定秒
+
+/* ---------- 状態 ---------- */
+let MODEL=null;           // {title, parts:[{title,targetSec,slides:[...]}], startDate, windowDays}
+let FLAT=[];              // 全スライドを平坦化 [{...slide, partIdx, dur, startAt}]
+let TOTAL=0;              // 総尺(秒)
+let cur=0;                // 現在スライドindex
+let playing=false;
+let slideElapsed=0;       // 現スライド経過(秒)
+let rafLast=0;
+let previewOverride=false; // 期間無視プレビュー
+let voices=[];
+
+/* ============================================================
+   1. テキスト解析 → モデル生成
+   ============================================================ */
+function splitSentences(text){
+  // 日本語の句点・改行で文分割
+  return text.replace(/\r/g,"")
+    .split(/(?<=[。！？])/)
+    .map(s=>s.trim()).filter(Boolean);
+}
+function wrapCount(str){ return Math.max(1, Math.ceil(str.length/MAX_CHARS_PER_LINE)); }
+
+// 本文をブロック列に：{heading, isPartBreak, sentences:[], chars}
+function parseBlocks(raw){
+  const lines=raw.replace(/\r/g,"").split("\n");
+  const blocks=[];
+  let curBlock=null;
+  const flush=()=>{ if(curBlock){ curBlock.chars=curBlock.sentences.join("").length+(curBlock.heading||"").length; blocks.push(curBlock); curBlock=null; } };
+  for(let ln of lines){
+    const t=ln.trim();
+    const h1=t.match(/^#\s+(.*)$/);
+    const h2=t.match(/^#{2,3}\s+(.*)$/);
+    if(h1){ flush(); curBlock={heading:h1[1].trim(), isPartBreak:true, sentences:[]}; continue; }
+    if(h2){ flush(); curBlock={heading:h2[1].trim(), isPartBreak:false, sentences:[]}; continue; }
+    if(t===""){ // 空行＝段落区切り
+      if(curBlock && curBlock.sentences.length){ flush(); }
+      continue;
+    }
+    // 箇条書き記号を除去して文として扱う
+    const clean=t.replace(/^[-*・•]\s*/,"").replace(/^\d+[.)、]\s*/,"");
+    if(!curBlock) curBlock={heading:null, isPartBreak:false, sentences:[]};
+    for(const s of splitSentences(clean)) curBlock.sentences.push(s);
+  }
+  flush();
+  return blocks.filter(b=> (b.heading&&b.heading.length) || b.sentences.length);
+}
+
+// ブロック列を3パートへ配分（大見出し優先、無ければ文字数均等）
+function distribute(blocks){
+  const total=blocks.reduce((a,b)=>a+ (b.chars||0),0)||1;
+  const partBreaks=blocks.map((b,i)=>b.isPartBreak?i:-1).filter(i=>i>=0);
+  let groups;
+
+  if(partBreaks.length>=3){
+    // 大見出しの数で3グループに束ねる（見出し単位を跨がない）
+    const heads=[]; // 各大見出しの開始index
+    blocks.forEach((b,i)=>{ if(b.isPartBreak) heads.push(i); });
+    heads.push(blocks.length);
+    const sections=[]; // [start,end)
+    for(let i=0;i<heads.length-1;i++) sections.push([heads[i],heads[i+1]]);
+    // 先頭に見出し無し前置きがあれば最初のセクションに含める
+    if(heads[0]>0) sections[0][0]=0;
+    // セクションを3グループへ文字数均等に貪欲配分
+    const secChars=sections.map(([s,e])=>blocks.slice(s,e).reduce((a,b)=>a+b.chars,0));
+    groups=greedy3(sections,secChars);
+  }else{
+    // 文字数で均等3分割（ブロック境界を尊重）
+    groups=[[],[],[]];
+    let acc=0, gi=0;
+    const targets=[total/3, total*2/3];
+    for(let i=0;i<blocks.length;i++){
+      groups[gi].push([i,i+1]);
+      acc+=blocks[i].chars;
+      if(gi<2 && acc>=targets[gi] && i<blocks.length-1) gi++;
+    }
+    // 空グループ防止
+    while(groups.some(g=>g.length===0) && groups.flat().length>=3){
+      // 最も大きいグループから1つ移す
+      const sizes=groups.map(g=>g.length);
+      const from=sizes.indexOf(Math.max(...sizes));
+      const to=sizes.indexOf(Math.min(...sizes));
+      groups[to].unshift(groups[from].pop());
+    }
+  }
+  // groups: 各要素は [start,end) 区間の配列 → ブロックindex配列へ
+  return groups.map(g=>{
+    const idxs=[];
+    g.forEach(([s,e])=>{ for(let i=s;i<e;i++) idxs.push(i); });
+    return idxs.sort((a,b)=>a-b);
+  });
+}
+function greedy3(sections,chars){
+  const order=sections.map((_,i)=>i).sort((a,b)=>chars[b]-chars[a]);
+  const groups=[[],[],[]], sum=[0,0,0];
+  for(const i of order){ const g=sum.indexOf(Math.min(...sum)); groups[g].push(sections[i]); sum[g]+=chars[i]; }
+  // 元の順序を保つ
+  return groups.map(g=>g.sort((a,b)=>a[0]-b[0]));
+}
+
+// 要点抽出：各見出しブロックの代表文（最初の文）を集める
+function makeSummary(blockIdxs, blocks){
+  const points=[];
+  for(const i of blockIdxs){
+    const b=blocks[i];
+    if(b.heading){
+      // 見出し＋最初の文の冒頭
+      const first=b.sentences[0]||"";
+      points.push(b.heading + (first?("：" + trimTo(first,34)) : ""));
+    }else if(b.sentences.length){
+      points.push(trimTo(b.sentences[0],40));
+    }
+    if(points.length>=5) break;
+  }
+  if(points.length===0){
+    // 見出しが無い場合は最長の文を数点
+    const all=blockIdxs.flatMap(i=>blocks[i].sentences).sort((a,b)=>b.length-a.length);
+    for(const s of all.slice(0,4)) points.push(trimTo(s,40));
+  }
+  return points.slice(0,5);
+}
+function trimTo(s,n){ s=s.replace(/[。！？]$/,""); return s.length>n? s.slice(0,n)+"…" : s; }
+
+// パート内ブロック → コンテンツスライド列
+function blocksToSlides(blockIdxs, blocks){
+  const slides=[];
+  for(const i of blockIdxs){
+    const b=blocks[i];
+    const heading=b.heading||null;
+    let sents=b.sentences.slice();
+    if(sents.length===0 && heading){ slides.push({type:"content",heading,lines:[]}); continue; }
+    // 文を行(bullet)化しつつ、行数上限でスライド分割
+    let bucket=[];
+    const push=()=>{ if(bucket.length){ slides.push({type:"content",heading:heading,lines:bucket.slice()}); bucket=[]; } };
+    let first=true;
+    for(const s of sents){
+      const line=trimTo(s,60);
+      const lineWeight=wrapCount(line);
+      const curWeight=bucket.reduce((a,l)=>a+wrapCount(l),0);
+      if(curWeight+lineWeight>MAX_LINES_PER_SLIDE && bucket.length){ push(); }
+      bucket.push(line);
+    }
+    push();
+    // 2枚目以降は見出しに（続き）を付与
+    for(let k=1;k<slides.length;k++){
+      if(slides[k].heading===heading && heading) slides[k]={...slides[k]};
+    }
+  }
+  return slides;
+}
+
+function buildModel(){
+  const raw=$("docIn").value.trim();
+  if(!raw){ setStatus("本文が空です。書類を貼り付けるか、ファイルを読み込んでください。","warn"); return null; }
+  const blocks=parseBlocks(raw);
+  if(blocks.length<3){ setStatus("内容が短すぎて3パートに分割できません。もう少し本文を追加してください。","warn"); return null; }
+
+  const groups=distribute(blocks);
+  const title=$("titleIn").value.trim() || "無題の資料";
+  const mins=[+$("min1").value||18,+$("min2").value||17,+$("min3").value||15].map(m=>clamp(m,1,19));
+  const partTitles=guessPartTitles(groups,blocks);
+
+  const parts=groups.map((idxs,pi)=>{
+    const content=blocksToSlides(idxs,blocks);
+    const summary={type:"summary",heading:"このパートの要点",lines:makeSummary(idxs,blocks)};
+    const slides=[
+      {type:"title", heading:partTitles[pi], lines:[]},
+      ...content,
+      summary
+    ];
+    return {title:partTitles[pi], targetSec:mins[pi]*60, slides};
+  });
+
+  return {
+    title,
+    parts,
+    startDate:$("startDate").value || todayStr(),
+    windowDays:clamp(+$("windowDays").value||7,1,60)
+  };
+}
+
+function guessPartTitles(groups,blocks){
+  return groups.map((idxs,pi)=>{
+    const head=idxs.map(i=>blocks[i]).find(b=>b.heading);
+    return "パート"+(pi+1)+"："+(head? head.heading : autoTitle(idxs,blocks));
+  });
+}
+function autoTitle(idxs,blocks){
+  const first=idxs.flatMap(i=>blocks[i].sentences)[0]||"";
+  return trimTo(first,20)||"本編";
+}
+
+/* ============================================================
+   2. 尺の割り当て（タイマーモード）
+   ============================================================ */
+function computeTimings(model){
+  FLAT=[];
+  for(let pi=0;pi<model.parts.length;pi++){
+    const part=model.parts[pi];
+    const contentSlides=part.slides.filter(s=>s.type!=="title");
+    // タイトル固定 + まとめはやや長め。残りを文字量比で配分
+    let remain=part.targetSec - TITLE_SLIDE_SEC;
+    const weights=part.slides.map(s=>{
+      if(s.type==="title") return 0;
+      if(s.type==="summary") return Math.max(1, s.lines.length)*1.8; // まとめは重め
+      const chars=(s.heading?s.heading.length:0)+s.lines.join("").length;
+      return Math.max(6, chars);
+    });
+    const wSum=weights.reduce((a,b)=>a+b,0)||1;
+    part.slides.forEach((s,si)=>{
+      let dur;
+      if(s.type==="title") dur=TITLE_SLIDE_SEC;
+      else dur=Math.max(MIN_SLIDE_SEC, remain*weights[si]/wSum);
+      s._dur=dur;
+    });
+    // 端数調整：合計を目標尺に一致
+    const got=part.slides.reduce((a,s)=>a+s._dur,0);
+    const scale=(part.targetSec)/got;
+    part.slides.forEach(s=>{ if(s.type!=="title") s._dur*=scale; s.dur=s._dur; });
+  }
+  // 平坦化 & startAt
+  let at=0;
+  model.parts.forEach((part,pi)=>{
+    part._startAt=at;
+    part.slides.forEach((s,si)=>{
+      FLAT.push(Object.assign({},s,{partIdx:pi, slideIdx:si, dur:s._dur, startAt:at}));
+      at+=s._dur;
+    });
+  });
+  TOTAL=at;
+}
+
+/* ============================================================
+   3. レンダリング（プレビュー & プレーヤー）
+   ============================================================ */
+function renderOverview(model){
+  $("overviewCard").style.display="block";
+  const grid=$("partsGrid"); grid.innerHTML="";
+  model.parts.forEach((part,pi)=>{
+    const dur=part.slides.reduce((a,s)=>a+s.dur,0);
+    const nContent=part.slides.filter(s=>s.type==="content").length;
+    const el=document.createElement("div");
+    el.className="part-chip "+PCLASS[pi];
+    el.innerHTML=`<div class="bar"></div>
+      <div class="plabel">PART ${pi+1}</div>
+      <div class="ptitle">${esc(part.title.replace(/^パート\d+：/,""))}</div>
+      <div class="meta">⏱ <b>${fmt(dur)}</b> ・ スライド <b>${part.slides.length}</b>枚<br>本編 ${nContent}枚＋要点まとめ 1枚</div>`;
+    grid.appendChild(el);
+  });
+  $("ovTotal").textContent=fmt(TOTAL);
+  $("ovSlides").textContent=FLAT.length;
+  updateAvailBadge();
+}
+
+function renderSlide(i){
+  const s=FLAT[i]; if(!s) return;
+  const st=$("stage");
+  const color=PCOLORS[s.partIdx];
+  st.className="stage";
+  const partTitle=MODEL.parts[s.partIdx].title.replace(/^パート\d+：/,"");
+  const chapNum="PART "+(s.partIdx+1);
+  let html="";
+  if(s.type==="title"){
+    st.classList.add("is-title");
+    st.style.background=`radial-gradient(120% 120% at 15% 0%, ${color}44 0%, #12140f 60%)`;
+    html=`<div class="pnum" style="color:${color}">${chapNum}</div>
+          <div class="big">${esc(s.heading.replace(/^パート\d+：/,""))}</div>
+          <div class="foot"><span>${esc(MODEL.title)}</span><span>${fmt(MODEL.parts[s.partIdx].targetSec)}</span></div>`;
+  }else if(s.type==="summary"){
+    st.classList.add("is-summary");
+    st.style.background=`linear-gradient(160deg, ${color}22, #12140f 70%)`;
+    html=`<div class="badge" style="color:#fff;background:${color}"><span>✦</span> 要点まとめ</div>
+          <h3>${esc(partTitle)}</h3>
+          <ul style="color:#EDEFEA">${s.lines.map(l=>`<li>${esc(l)}</li>`).join("")}</ul>
+          <div class="foot"><span>${esc(chapNum)} — SUMMARY</span><span>${esc(MODEL.title)}</span></div>`;
+  }else{
+    st.style.background="#12140f";
+    html=`<div class="kicker"><span class="dot" style="background:${color}"></span>${esc(chapNum)} · ${esc(partTitle)}</div>
+          ${s.heading?`<h3>${esc(s.heading)}</h3>`:""}
+          <ul>${s.lines.map(l=>`<li>${esc(l)}</li>`).join("")}</ul>
+          <div class="foot"><span>${esc(MODEL.title)}</span><span>${i+1} / ${FLAT.length}</span></div>`;
+  }
+  st.innerHTML=html;
+  $("slideIdx").textContent=(i+1)+" / "+FLAT.length;
+  renderChapList();
+}
+
+function renderChapters(){
+  const box=$("chapters"); box.innerHTML="";
+  MODEL.parts.forEach((part)=>{
+    if(part._startAt===0) return;
+    const m=document.createElement("div");
+    m.className="chmark"; m.style.left=(part._startAt/TOTAL*100)+"%";
+    box.appendChild(m);
+  });
+}
+function renderChapList(){
+  const box=$("chaplist");
+  if(box.dataset.built) { // just update active
+    [...box.children].forEach((b,pi)=>b.classList.toggle("active", pi===FLAT[cur].partIdx));
+    return;
+  }
+  box.innerHTML=""; box.dataset.built="1";
+  MODEL.parts.forEach((part,pi)=>{
+    const b=document.createElement("button");
+    b.innerHTML=`<span class="c" style="background:${PCOLORS[pi]}"></span>${esc(part.title.replace("：","："))}`;
+    b.onclick=()=>{ seekToPart(pi); };
+    box.appendChild(b);
+  });
+  [...box.children].forEach((b,pi)=>b.classList.toggle("active", pi===FLAT[cur].partIdx));
+}
+
+/* ============================================================
+   4. 再生制御
+   ============================================================ */
+function goto(i, resetElapsed=true){
+  cur=clamp(i,0,FLAT.length-1);
+  if(resetElapsed) slideElapsed=0;
+  renderSlide(cur);
+  updateProgress();
+  if(playing){ speakCurrent(); }
+}
+function seekToPart(pi){
+  const idx=FLAT.findIndex(s=>s.partIdx===pi);
+  goto(idx>=0?idx:0);
+}
+function togglePlay(){ playing?pause():play(); }
+function play(){
+  if(isLocked()){ return; }
+  playing=true; $("playBtn").textContent="⏸";
+  rafLast=performance.now();
+  speakCurrent();
+  requestAnimationFrame(tick);
+}
+function pause(){
+  playing=false; $("playBtn").textContent="▶";
+  stopSpeak();
+}
+function tick(now){
+  if(!playing) return;
+  const dt=(now-rafLast)/1000; rafLast=now;
+  const ttsOn=$("ttsPlayChk").checked && voices.length>0;
+  // ナレーションON時は utterance 終了で進む（tickは進行バー更新のみ）
+  if(!ttsOn){
+    slideElapsed+=dt;
+    if(slideElapsed>=FLAT[cur].dur){
+      if(cur>=FLAT.length-1){ pause(); slideElapsed=FLAT[cur].dur; updateProgress(); return; }
+      goto(cur+1);
+    }
+  }
+  updateProgress();
+  requestAnimationFrame(tick);
+}
+function updateProgress(){
+  const ttsOn=$("ttsPlayChk").checked && voices.length>0;
+  let elapsed;
+  if(ttsOn){
+    // 経過はスライド境界ベース（近似）
+    elapsed=FLAT[cur].startAt + Math.min(slideElapsed, FLAT[cur].dur);
+  }else{
+    elapsed=FLAT[cur].startAt + Math.min(slideElapsed,FLAT[cur].dur);
+  }
+  $("pfill").style.width=(elapsed/TOTAL*100)+"%";
+  $("tCur").textContent=fmt(elapsed);
+  $("tTot").textContent=fmt(TOTAL);
+}
+
+/* ---------- ナレーション ---------- */
+function slideText(s){
+  if(s.type==="title") return s.heading.replace(/^パート\d+：/,"パート。");
+  if(s.type==="summary") return "このパートの要点。"+s.lines.join("。 ");
+  return (s.heading? s.heading+"。 ":"") + s.lines.join(" ");
+}
+function speakCurrent(){
+  stopSpeak();
+  const ttsOn=$("ttsPlayChk").checked && voices.length>0;
+  if(!ttsOn) return;
+  const s=FLAT[cur];
+  const u=new SpeechSynthesisUtterance(slideText(s));
+  const v=voices[$("voiceSel").value]||voices.find(v=>/ja|Japan/i.test(v.lang));
+  if(v) u.voice=v;
+  u.lang="ja-JP"; u.rate=1.02; u.pitch=1;
+  u.onend=()=>{
+    if(!playing) return;
+    if(cur>=FLAT.length-1){ pause(); return; }
+    goto(cur+1);
+  };
+  slideElapsed=0;
+  // 進行バーを近似で動かすため時間も回す
+  window.speechSynthesis.speak(u);
+}
+function stopSpeak(){ try{window.speechSynthesis.cancel();}catch(e){} }
+
+function loadVoices(){
+  voices=window.speechSynthesis? window.speechSynthesis.getVoices():[];
+  // 日本語を優先で並べる
+  voices=voices.map((v,i)=>({v,i})).sort((a,b)=>{
+    const ja=x=>/ja|Japan/i.test(x.v.lang)?0:1; return ja(a)-ja(b);
+  }).map(o=>o.v);
+  const sel=$("voiceSel"); sel.innerHTML="";
+  voices.forEach((v,i)=>{
+    const o=document.createElement("option"); o.value=i; o.textContent=`${v.name} (${v.lang})`;
+    sel.appendChild(o);
+  });
+  const jaIdx=voices.findIndex(v=>/ja|Japan/i.test(v.lang));
+  if(jaIdx>=0) sel.value=jaIdx;
+  if(voices.length===0){ $("ttsPlayChk").checked=false; }
+}
+
+/* ============================================================
+   5. 視聴期間ゲート
+   ============================================================ */
+function todayStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
+function availWindow(){
+  const start=new Date(MODEL.startDate+"T00:00:00");
+  const end=new Date(start.getTime()+MODEL.windowDays*86400000);
+  return {start,end};
+}
+function availState(){
+  const {start,end}=availWindow();
+  const now=new Date();
+  if(now<start) return {state:"soon",start,end};
+  if(now>=end)  return {state:"closed",start,end};
+  return {state:"open",start,end};
+}
+function isLocked(){ return !previewOverride && availState().state!=="open"; }
+function updateAvailBadge(){
+  const b=$("availBadge"); if(!MODEL){b.style.display="none";return;}
+  const {state,start,end}=availState();
+  b.style.display="inline-flex"; b.className="avail-badge "+state;
+  const t=b.querySelector(".t");
+  if(state==="open"){ t.textContent="視聴可能（〜"+end.toLocaleDateString("ja-JP")+"）"; }
+  else if(state==="soon"){ t.textContent=start.toLocaleDateString("ja-JP")+" 公開予定"; }
+  else{ t.textContent="視聴期間 終了"; }
+}
+function updateGate(){
+  const g=$("gate");
+  if(!MODEL){ g.classList.remove("show"); return; }
+  if(previewOverride || availState().state==="open"){ g.classList.remove("show"); return; }
+  const {state,start,end}=availState();
+  g.classList.add("show");
+  if(state==="soon"){
+    $("gateIco").textContent="⏳"; $("gateTitle").textContent="まだ公開前です";
+    $("gateMsg").textContent=start.toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"})+" から "+MODEL.windowDays+"日間 視聴できます。";
+    const diff=start-new Date();
+    $("gateCd").textContent="公開まで "+fmtCountdown(diff);
+  }else{
+    $("gateIco").textContent="🔚"; $("gateTitle").textContent="視聴期間が終了しました";
+    $("gateMsg").textContent="公開期間："+start.toLocaleDateString("ja-JP")+" 〜 "+end.toLocaleDateString("ja-JP");
+    $("gateCd").textContent="";
+  }
+}
+function fmtCountdown(ms){
+  const s=Math.max(0,Math.floor(ms/1000));
+  const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60);
+  if(d>0) return `${d}日 ${h}時間`;
+  if(h>0) return `${h}時間 ${m}分`;
+  return `${m}分`;
+}
+
+/* ============================================================
+   6. WebM 書き出し（Canvas録画）
+   ============================================================ */
+async function exportWebM(){
+  if(!MODEL){ return; }
+  const status=$("webmStatus");
+  if(!window.MediaRecorder){ status.textContent="このブラウザは録画に未対応です。"; return; }
+  pause();
+  const canvas=$("recCanvas"), ctx=canvas.getContext("2d");
+  const stream=canvas.captureStream(30);
+  let mime="video/webm;codecs=vp9"; if(!MediaRecorder.isTypeSupported(mime)) mime="video/webm";
+  const rec=new MediaRecorder(stream,{mimeType:mime, videoBitsPerSecond:4_000_000});
+  const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  const done=new Promise(res=> rec.onstop=res);
+  rec.start();
+
+  const speed=Math.max(1,+(prompt("録画の速度倍率（1=実尺, 10=1/10の時間で高速録画）","10")||10));
+  const t0=performance.now();
+  for(let i=0;i<FLAT.length;i++){
+    drawSlideCanvas(ctx,canvas,FLAT[i],i);
+    status.textContent=`録画中… ${i+1}/${FLAT.length} スライド`;
+    await sleep((FLAT[i].dur*1000)/speed);
+  }
+  rec.stop(); await done;
+  const blob=new Blob(chunks,{type:mime});
+  downloadBlob(blob,(MODEL.title||"video").replace(/\s+/g,"_")+".webm");
+  status.textContent=`完成：${fmt(TOTAL)} 相当の動画（実録画 ${((performance.now()-t0)/1000).toFixed(0)}秒）`;
+}
+function drawSlideCanvas(ctx,cv,s,i){
+  const W=cv.width,H=cv.height, color=PCOLORS[s.partIdx];
+  ctx.fillStyle="#12140f"; ctx.fillRect(0,0,W,H);
+  // アクセント
+  ctx.fillStyle=color; ctx.globalAlpha=0.14; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
+  ctx.fillStyle="#12140f"; ctx.fillRect(0,0,W,H);
+  const pad=W*0.08; let y=pad+20;
+  const partTitle=MODEL.parts[s.partIdx].title.replace(/^パート\d+：/,"");
+  if(s.type==="title"){
+    ctx.fillStyle=color; ctx.font="700 34px 'Zen Kaku Gothic New',sans-serif";
+    ctx.fillText("PART "+(s.partIdx+1), pad, H*0.4);
+    ctx.fillStyle="#F4F5F0"; ctx.font="900 64px 'Zen Kaku Gothic New',sans-serif";
+    wrapText(ctx,s.heading.replace(/^パート\d+：/,""),pad,H*0.4+70,W-pad*2,74);
+  }else{
+    // kicker
+    ctx.fillStyle=color; ctx.beginPath(); ctx.arc(pad+8,y-8,9,0,7); ctx.fill();
+    ctx.fillStyle="#C9CDC2"; ctx.font="700 26px 'Zen Kaku Gothic New',sans-serif";
+    ctx.fillText((s.type==="summary"?"要点まとめ — ":"")+"PART "+(s.partIdx+1)+" · "+partTitle, pad+28, y);
+    y+=64;
+    if(s.heading){ ctx.fillStyle="#F4F5F0"; ctx.font="900 46px 'Zen Kaku Gothic New',sans-serif";
+      y=wrapText(ctx,s.heading,pad,y,W-pad*2,56)+30; }
+    ctx.fillStyle="#EAECE6"; ctx.font="400 30px 'Zen Kaku Gothic New',sans-serif";
+    for(const l of s.lines){
+      ctx.fillStyle=color; ctx.fillRect(pad,y-20,12,12);
+      ctx.fillStyle="#EAECE6";
+      y=wrapText(ctx,l,pad+28,y,W-pad*2-28,44)+18;
+    }
+  }
+  // footer
+  ctx.fillStyle="#7C8175"; ctx.font="400 20px 'JetBrains Mono',monospace";
+  ctx.fillText(MODEL.title,pad,H-pad*0.5);
+  ctx.textAlign="right"; ctx.fillText((i+1)+" / "+FLAT.length,W-pad,H-pad*0.5); ctx.textAlign="left";
+}
+function wrapText(ctx,text,x,y,maxW,lh){
+  const chars=[...text]; let line="";
+  for(const ch of chars){
+    if(ctx.measureText(line+ch).width>maxW && line){ ctx.fillText(line,x,y); line=ch; y+=lh; }
+    else line+=ch;
+  }
+  if(line) ctx.fillText(line,x,y);
+  return y;
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function downloadBlob(blob,name){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
+/* ============================================================
+   7. 共有用HTML書き出し（自己完結プレーヤー）
+   ============================================================ */
+function exportHTML(){
+  if(!MODEL) return;
+  // このアプリ自身の完全な複製を作り、書類データを埋め込んで自動生成＋視聴専用UIにする。
+  // 全ロジック（3分割・要点抽出・尺配分・視聴期間・ナレーション）をそのまま再利用するため確実に動作する。
+  const data={
+    title:$("titleIn").value, doc:$("docIn").value,
+    mins:[$("min1").value,$("min2").value,$("min3").value],
+    startDate:MODEL.startDate, windowDays:MODEL.windowDays,
+    tts:$("ttsChk").checked
+  };
+  const inject=
+`<script>window.__EMBED__=${JSON.stringify(data)};window.addEventListener("load",function(){try{
+  var d=window.__EMBED__;
+  document.getElementById("titleIn").value=d.title;
+  document.getElementById("docIn").value=d.doc;
+  document.getElementById("min1").value=d.mins[0];
+  document.getElementById("min2").value=d.mins[1];
+  document.getElementById("min3").value=d.mins[2];
+  document.getElementById("startDate").value=d.startDate;
+  document.getElementById("windowDays").value=d.windowDays;
+  document.getElementById("ttsChk").checked=!!d.tts;
+  document.getElementById("buildBtn").click();
+  // 視聴専用：入力/設定/構成カードと生成ボタンを隠し、プレーヤーだけ見せる
+  var cards=document.querySelectorAll(".card");
+  if(cards[0])cards[0].style.display="none";
+  if(cards[1])cards[1].style.display="none";
+  var ov=document.getElementById("overviewCard"); if(ov)ov.style.display="none";
+  var ex=document.getElementById("exportBtn"); if(ex)ex.style.display="none";
+  var wb=document.getElementById("webmBtn"); if(wb)wb.style.display="none";
+}catch(e){console.error(e);}});<\/script>`;
+  // 注意：本体スクリプト内にも "</body>" という文字列リテラルが含まれるため、
+  // 最後の </body> の直前に挿入する（replaceだと本体内の文字列に誤ヒットする）。
+  const src=document.documentElement.outerHTML;
+  const at=src.lastIndexOf("</body>");
+  const full="<!DOCTYPE html>\n"+src.slice(0,at)+inject+"\n"+src.slice(at);
+  downloadBlob(new Blob([full],{type:"text/html"}),(MODEL.title||"video").replace(/\s+/g,"_")+"_動画.html");
+  setStatus("共有用HTMLを書き出しました。このファイルを配布すれば、受け手のブラウザだけで視聴できます（開くと自動再生準備・視聴期間つき）。","ok");
+}
+
+/* ============================================================
+   ユーティリティ / イベント
+   ============================================================ */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function setStatus(msg,kind){ const el=$("buildStatus"); el.textContent=msg; el.className="status "+kind; }
+
+function doBuild(){
+  const model=buildModel();
+  if(!model) return;
+  MODEL=model;
+  computeTimings(MODEL);
+  renderOverview(MODEL);
+  $("playerCard").style.display="block";
+  renderChapters();
+  $("chaplist").dataset.built="";
+  cur=0; playing=false; slideElapsed=0; previewOverride=false;
+  $("playBtn").textContent="▶";
+  goto(0);
+  updateGate(); updateAvailBadge();
+  setStatus("生成しました。下の「再生」から視聴できます（各パート20分未満・末尾に要点まとめ）。","ok");
+  saveLocal();
+  $("playerCard").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function saveLocal(){
+  try{ localStorage.setItem("doc2video:last", JSON.stringify({
+    title:$("titleIn").value, doc:$("docIn").value,
+    mins:[$("min1").value,$("min2").value,$("min3").value],
+    startDate:$("startDate").value, windowDays:$("windowDays").value
+  })); }catch(e){}
+}
+function loadLocal(){
+  try{
+    const d=JSON.parse(localStorage.getItem("doc2video:last")||"null");
+    if(!d) return;
+    $("titleIn").value=d.title||""; $("docIn").value=d.doc||"";
+    if(d.mins){ $("min1").value=d.mins[0]; $("min2").value=d.mins[1]; $("min3").value=d.mins[2]; }
+    $("startDate").value=d.startDate||todayStr(); $("windowDays").value=d.windowDays||7;
+    updateCharCount(); updateTotalMin();
+  }catch(e){}
+}
+
+function updateCharCount(){ $("charCount").textContent=($("docIn").value.length)+" 文字"; }
+function updateTotalMin(){ $("totalMin").textContent=(+$("min1").value||0)+(+$("min2").value||0)+(+$("min3").value||0); $("windowDays2").textContent=$("windowDays").value; }
+
+/* ---------- イベント登録 ---------- */
+$("docIn").addEventListener("input",()=>{updateCharCount();});
+["min1","min2","min3","windowDays"].forEach(id=>$(id).addEventListener("input",updateTotalMin));
+$("windowDays").addEventListener("input",()=>{ $("windowDays2").textContent=$("windowDays").value; });
+
+$("fileIn").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ $("docIn").value=r.result; updateCharCount(); if(!$("titleIn").value) $("titleIn").value=f.name.replace(/\.(txt|md|markdown)$/i,""); };
+  r.readAsText(f,"utf-8");
+});
+
+$("sampleBtn").addEventListener("click",()=>{
+  $("titleIn").value="新人研修 第3回：情報セキュリティ基礎";
+  $("docIn").value=SAMPLE; updateCharCount();
+  if(!$("startDate").value) $("startDate").value=todayStr();
+});
+
+$("buildBtn").addEventListener("click",doBuild);
+$("playBtn").addEventListener("click",togglePlay);
+$("prevBtn").addEventListener("click",()=>goto(cur-1));
+$("nextBtn").addEventListener("click",()=>goto(cur+1));
+$("pbar").addEventListener("click",e=>{
+  if(isLocked()) return;
+  const r=$("pbar").getBoundingClientRect();
+  const t=clamp((e.clientX-r.left)/r.width,0,1)*TOTAL;
+  const idx=FLAT.findIndex(s=>t>=s.startAt && t<s.startAt+s.dur);
+  goto(idx>=0?idx:FLAT.length-1);
+});
+$("gatePreview").addEventListener("click",()=>{ previewOverride=true; updateGate(); });
+$("fsBtn").addEventListener("click",()=>{ const el=$("stageOuter"); (el.requestFullscreen||el.webkitRequestFullscreen).call(el); });
+$("webmBtn").addEventListener("click",exportWebM);
+$("exportBtn").addEventListener("click",exportHTML);
+
+document.addEventListener("keydown",e=>{
+  if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName)) return;
+  if($("playerCard").style.display==="none") return;
+  if(e.code==="Space"){ e.preventDefault(); togglePlay(); }
+  else if(e.code==="ArrowRight"){ goto(cur+1); }
+  else if(e.code==="ArrowLeft"){ goto(cur-1); }
+});
+
+if(window.speechSynthesis){
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged=loadVoices;
+}
+setInterval(()=>{ if(MODEL){ updateGate(); updateAvailBadge(); } },1000);
+
+/* ---------- サンプル本文 ---------- */
+const SAMPLE=`# 情報セキュリティの全体像
+情報セキュリティとは、情報を「機密性」「完全性」「可用性」の3つの観点から守る取り組みです。機密性は許可された人だけが情報にアクセスできること、完全性は情報が正確で改ざんされていないこと、可用性は必要なときに情報を使えることを指します。
+これらはCIAと呼ばれ、あらゆる対策の土台になります。どれか一つが欠けても事故につながります。
+
+## 身近なリスク
+私たちの業務では、メールの誤送信、USBメモリの紛失、パスワードの使い回しといった小さな油断が大きな事故の入り口になります。攻撃者は高度な技術よりも、人の隙を突くことを好みます。
+
+# パスワードと認証
+安全なパスワードは長く複雑で、サービスごとに異なるものにします。12文字以上を目安に、英大文字・小文字・数字・記号を組み合わせましょう。使い回しは一つの漏えいが連鎖被害を生むため厳禁です。
+多要素認証を有効にすると、パスワードが漏れても不正ログインを大幅に防げます。可能な限りすべてのサービスで設定してください。
+
+## パスワード管理ツール
+すべてを記憶するのは現実的ではありません。信頼できるパスワード管理ツールを使えば、強固なパスワードを安全に保管し、自動入力できます。マスターパスワードだけは特に慎重に管理します。
+
+# 標的型攻撃への対応
+標的型攻撃は、実在の取引先や上司を装ったメールで添付ファイルやリンクを開かせ、社内に侵入します。日本語が自然で、業務に関係する内容のため見破りにくいのが特徴です。
+不審なメールを受け取ったら、開かずに情報システム部門へ報告します。送信元アドレスをよく確認し、心当たりのない添付は絶対に開かないでください。
+
+## 事故が起きたら
+万一クリックしてしまっても、隠さず直ちに報告することが被害を最小化します。ネットワークから端末を切り離し、指示を待ちましょう。早い報告が会社と同僚を守ります。`;
+
+loadLocal();
+if(!$("startDate").value) $("startDate").value=todayStr();
+updateCharCount(); updateTotalMin();
+</script>
+</body>
+</html>
