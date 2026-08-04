@@ -340,4 +340,23 @@ button.tab.on{color:var(--turf);border-bottom-color:var(--turf);}
 .import-result.ng{background:var(--red-tint);border-color:var(--red-line);color:var(--red);}
 .import-result ul{margin:6px 0 0;padding-left:1.2em;}
 .import-result li{margin:2px 0;}
+
+/* ---------- 騎手評価 ---------- */
+#jockeyList{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
+.jockey{
+  display:grid;
+  grid-template-columns:1fr 88px;
+  grid-template-areas:"name sel" "horses sel";
+  gap:2px 10px;align-items:center;
+  border:1px solid var(--line);border-radius:10px;background:var(--field);padding:8px 10px;
+}
+.jk-name{grid-area:name;font-weight:700;font-size:.9rem;display:flex;align-items:center;gap:6px;}
+.jk-mark{
+  font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:4px;
+  background:var(--turf-tint);color:var(--turf);border:1px solid var(--turf);
+}
+.jk-horses{grid-area:horses;font-size:.72rem;color:var(--ink-soft);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;}
+.jockey select{grid-area:sel;align-self:center;width:88px;padding:6px 8px;text-align:center;}
+
 </style>

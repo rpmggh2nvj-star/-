@@ -304,4 +304,30 @@ t("脚質が載っていない出馬表では既定値のままにする（誤�
   assert.ok(CO.horses.every(h => h.last1 === 0), "近走を誤検出している");
 });
 
+
+console.log("\n■ 騎手名の読み取り");
+
+t("列方向：厩舎欄と取り違えずに騎手名を読み取る", () => {
+  assert.deepStrictEqual(CO.horses.map(h => h.jockeyName),
+    ["野澤惠彦","保園翔也","沖響主","岡村健司","山本大翔","本田正重","西村栄喜"]);
+});
+
+t("厩舎欄の競馬場名（船橋・浦和）を騎手にしない", () => {
+  const names = CO.horses.map(h => h.jockeyName);
+  assert.ok(!names.some(n => /船橋|浦和|大井|川崎/.test(n)),
+    "競馬場名を騎手として拾っている: " + names.join(","));
+});
+
+t("行方向でも騎手名を読み取る", () => {
+  const r = P.parseRacecard(TEXT_JRA);
+  assert.strictEqual(find(r.horses,1).jockeyName, "武豊");
+  assert.strictEqual(find(r.horses,3).jockeyName, "福永祐一");
+  assert.strictEqual(find(r.horses,8).jockeyName, "デムーロ", "カタカナの騎手名が取れない");
+});
+
+t("騎手名がない出馬表では設定しない", () => {
+  const r = P.parseRacecard("1 アイウエオカ 2.4\n2 カキクケコサ 5.6\n3 サシスセソタ 9.9");
+  assert.ok(r.horses.every(h => !h.jockeyName), "騎手名を誤検出している");
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

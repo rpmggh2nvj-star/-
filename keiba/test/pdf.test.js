@@ -121,5 +121,76 @@ function polyfill(){
     assert.ok(Math.abs(rows.reduce((a,x)=>a+x.prob,0) - 1) < 1e-9);
   });
 
+
+  /* ---- netkeiba の馬柱形式（実物） ----
+     このPDFと同じレースの出馬表を別途コピーしたものが
+     fixture-funabashi.txt にあり、そちらの値を正解として検証する。 */
+  const nkBuf = fs.readFileSync(path.join(__dirname, "fixture-netkeiba.pdf"));
+  const nk = await PDF.pdfToText(new Uint8Array(nkBuf), globalThis.pdfjsLib);
+  const NK = P.parseRacecard(nk.text, {html:false});
+
+  console.log("\n■ netkeiba馬柱形式（実物のPDF）");
+
+  t("馬柱形式として認識し、7頭すべて読み取る", () => {
+    assert.ok(NK.warnings.some(w => /馬柱/.test(w)), "馬柱形式として認識していない");
+    assert.strictEqual(NK.horses.length, 7, "頭数: " + NK.horses.length);
+  });
+
+  t("父名・母名・前走相手を馬名と取り違えない", () => {
+    assert.deepStrictEqual(NK.horses.map(h => h.name),
+      ["タケデンプリンセス","アマゴ","マッドリボンガール","ミュージシエンヌ",
+       "フェアリーランド","エンドステージ","カナーリオ"]);
+  });
+
+  t("オッズと人気が正しい", () => {
+    assert.deepStrictEqual(NK.horses.map(h => h.odds),
+      [50.0, 79.9, 2.7, 4.8, 5.3, 2.3, 50.3]);
+    assert.deepStrictEqual(NK.horses.map(h => h.pop), [5, 7, 2, 3, 4, 1, 6]);
+  });
+
+  t("斤量が正しい（▲△の減量記号を除いて数値化）", () => {
+    assert.deepStrictEqual(NK.horses.map(h => h.kinryo), [54, 54, 51, 54, 52, 56, 54]);
+  });
+
+  t("脚質が正しい", () => {
+    assert.deepStrictEqual(NK.horses.map(h => h.style),
+      ["oikomi","sashi","sashi","sashi","senko","sashi","oikomi"]);
+  });
+
+  t("近走着順が正しい", () => {
+    assert.deepStrictEqual(NK.horses.map(h => [h.last1,h.last2,h.last3]),
+      [[6,12,12],[7,6,6],[1,2,6],[3,2,3],[2,5,6],[1,3,1],[7,7,11]]);
+  });
+
+  t("性齢と騎手名が取れる", () => {
+    assert.deepStrictEqual(NK.horses.map(h => h.sex + h.age),
+      ["牝5","牝7","牝5","牝4","牝7","セ8","牝5"]);
+    assert.ok(NK.horses.every(h => h.jockeyName), "騎手名が取れていない馬がある");
+  });
+
+  t("レース条件（船橋・ダート1200m）を検出する", () => {
+    assert.strictEqual(NK.race.track, "funabashi");
+    assert.strictEqual(NK.race.surface, "dirt");
+    assert.strictEqual(NK.race.distance, 1200);
+  });
+
+  t("過去走のレース名・R番号を今回のものと取り違えない", () => {
+    assert.strictEqual(NK.race.name, undefined, "過去走のレース名を拾っている: " + NK.race.name);
+    assert.strictEqual(NK.race.raceNo, undefined, "過去走のR番号を拾っている: " + NK.race.raceNo);
+  });
+
+  t("過去走から馬場適性・距離適性を推定する", () => {
+    assert.ok(NK.horses.every(h => h.baba >= 0 && h.baba <= 3), "馬場適性が範囲外");
+    assert.ok(NK.horses.every(h => h.dist >= 0 && h.dist <= 3), "距離適性が範囲外");
+    assert.ok(NK.horses.some(h => h.baba !== 2), "馬場適性が全馬既定値のまま");
+  });
+
+  t("材料が揃うので、そのまま実用的な予想になる", () => {
+    const race = Object.assign({pace:"mid", condition:0, budget:5000}, NK.race);
+    const rows = E.analyze(race, NK.horses);
+    assert.ok(rows.infoLevel > 0.85, "情報量が低い: " + rows.infoLevel);
+    assert.ok(Math.abs(rows.reduce((a,x)=>a+x.prob,0) - 1) < 1e-9);
+  });
+
   console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");
 })().catch(e => { console.error("実行エラー:", e.message); process.exit(1); });

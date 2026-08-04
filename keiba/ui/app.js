@@ -91,6 +91,61 @@ function applyRace(r){
   syncTrackUI();
 }
 
+/* ============================================================
+   騎手評価
+   一度つけた評価を騎手名で覚えておき、次のレースで自動的に当てる。
+   南関のように同じ騎手が繰り返し乗る場合、数レースでほぼ入力不要になる。
+   ============================================================ */
+const JOCKEY_KEY = "turf-logic-jockeys-v1";
+
+function loadJockeys(){
+  try{ return JSON.parse(localStorage.getItem(JOCKEY_KEY) || "{}") || {}; }
+  catch(e){ return {}; }
+}
+function saveJockeys(map){
+  try{ localStorage.setItem(JOCKEY_KEY, JSON.stringify(map)); }catch(e){}
+}
+let jockeyRatings = loadJockeys();
+
+// 記憶している評価を出走馬へ当てる
+function applyJockeyRatings(){
+  horses.forEach(h => {
+    if(h.jockeyName && jockeyRatings[h.jockeyName] != null){
+      h.jockey = jockeyRatings[h.jockeyName];
+    }
+  });
+}
+
+function uniqueJockeys(){
+  const seen = [];
+  horses.forEach(h => {
+    if(h.jockeyName && seen.indexOf(h.jockeyName) < 0) seen.push(h.jockeyName);
+  });
+  return seen;
+}
+
+function renderJockeys(){
+  const names = uniqueJockeys();
+  const panel = $("jockeyPanel");
+  panel.hidden = names.length === 0;
+  if(!names.length) return;
+
+  const known = names.filter(n => jockeyRatings[n] != null).length;
+  $("jockeyCount").textContent = `${names.length}人（記憶済み ${known}人）`;
+
+  $("jockeyList").innerHTML = names.map(n => {
+    const nums = horses.filter(h => h.jockeyName === n).map(h => h.num).join("・");
+    const cur = horses.find(h => h.jockeyName === n).jockey;
+    const remembered = jockeyRatings[n] != null;
+    return `
+      <div class="jockey">
+        <div class="jk-name">${escapeHtml(n)}${remembered ? '<span class="jk-mark">記憶</span>' : ""}</div>
+        <div class="jk-horses">${nums}番</div>
+        <select data-jockey="${escapeAttr(n)}">${opts(GRADE5, cur)}</select>
+      </div>`;
+  }).join("");
+}
+
 /* ---------- 出走馬カード ---------- */
 const GRADE5 = [{v:5,label:"S"},{v:4,label:"A"},{v:3,label:"B"},{v:2,label:"C"},{v:1,label:"D"}];
 const GRADE4 = [{v:3,label:"◎"},{v:2,label:"○"},{v:1,label:"△"},{v:0,label:"×"}];
@@ -127,7 +182,10 @@ function renderHorses(){
         <label class="field">3走前
           <input type="number" data-f="last3" value="${h.last3}" min="0" max="18" step="1">
         </label>
-        <label class="field">騎手
+        <label class="field">騎手名
+          <input type="text" data-f="jockeyName" value="${escapeAttr(h.jockeyName || "")}" placeholder="（任意）">
+        </label>
+        <label class="field">騎手評価
           <select data-f="jockey">${opts(GRADE5, h.jockey)}</select>
         </label>
         <label class="field">調教
@@ -162,17 +220,24 @@ $("horseList").addEventListener("input", e => {
   if(!f) return;
   const {card, h} = horseById(e.target);
   if(!h) return;
-  if(f === "name" || f === "style") h[f] = e.target.value;
+  if(f === "name" || f === "style" || f === "jockeyName") h[f] = e.target.value;
   else {
     h[f] = numOr(e.target.value, 0);
     if(f === "num") card.querySelector(".umaban").textContent = h.num;
   }
+  if(f === "jockeyName") renderJockeys();
 });
 $("horseList").addEventListener("change", e => {
   const f = e.target.dataset.f;
   if(f && e.target.tagName === "SELECT"){
     const {h} = horseById(e.target);
-    if(h) h[f] = (f === "style") ? e.target.value : numOr(e.target.value, 0);
+    if(!h) return;
+    h[f] = (f === "style") ? e.target.value : numOr(e.target.value, 0);
+    if(f === "jockey" && h.jockeyName){
+      jockeyRatings[h.jockeyName] = h.jockey;
+      saveJockeys(jockeyRatings);
+      renderJockeys();
+    }
   }
 });
 $("horseList").addEventListener("click", e => {
@@ -180,6 +245,7 @@ $("horseList").addEventListener("click", e => {
   const {card} = horseById(e.target);
   horses = horses.filter(x => x.id !== Number(card.dataset.id));
   renderHorses();
+  renderJockeys();
 });
 
 function addHorses(n){
@@ -193,12 +259,15 @@ function addHorses(n){
     added++;
   }
   renderHorses();
+  renderJockeys();
   if(added < n) alert(`出走馬は最大 ${E.MAX_FIELD} 頭までです。`);
 }
 
 function setHorses(list){
   horses = list.map(h => Object.assign(E.defaultHorse(h.num || 1), h, {id: ++seq}));
+  applyJockeyRatings();
   renderHorses();
+  renderJockeys();
   $("results").style.display = "none";
 }
 
@@ -472,6 +541,7 @@ $("btnClear").addEventListener("click", () => {
   if(!confirm("入力内容をすべて消去します。よろしいですか？")) return;
   horses = [];
   renderHorses();
+  renderJockeys();
   $("results").style.display = "none";
 });
 
@@ -495,6 +565,44 @@ document.querySelectorAll(".tab").forEach(btn => {
     $("tabJson").hidden  = on !== "json";
     $("importResult").hidden = true;
   });
+});
+
+$("jockeyList").addEventListener("change", e => {
+  const name = e.target.dataset.jockey;
+  if(!name) return;
+  const v = numOr(e.target.value, 3);
+  jockeyRatings[name] = v;
+  saveJockeys(jockeyRatings);
+  horses.forEach(h => { if(h.jockeyName === name) h.jockey = v; });
+  renderHorses();
+  renderJockeys();
+});
+$("btnJockeyReset").addEventListener("click", () => {
+  if(!confirm("記憶している騎手評価をすべて消します。よろしいですか？")) return;
+  jockeyRatings = {};
+  saveJockeys(jockeyRatings);
+  renderJockeys();
+});
+
+// 画像を貼り付けた場合。ブラウザ内で日本語を文字起こしする手段がないため、
+// 端末に入っている文字認識の使い方を案内する。
+$("pasteText").addEventListener("paste", e => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items) return;
+  let hasImage = false, hasText = false;
+  for(const it of items){
+    if(it.kind === "file" && /^image\//.test(it.type)) hasImage = true;
+    if(it.kind === "string") hasText = true;
+  }
+  if(hasImage && !hasText){
+    e.preventDefault();
+    showResult(false, "画像は直接読み取れません。端末の文字認識をお使いください。", [
+      "iPhone: 写真アプリでその画像を開き、右下の「テキスト認識表示」（枠に囲まれた文字のマーク）をタップ → 文字を長押し →「すべて選択」→「コピー」",
+      "Android: Googleフォトやレンズでその画像を開き、テキストを選択 →「コピー」",
+      "コピーできたら、この欄に貼り付けて「読み取る」を押してください。",
+      "PDFで保存できる場合は「PDF」タブの方が確実です。"
+    ]);
+  }
 });
 
 $("btnPasteRun").addEventListener("click", () => importPaste($("pasteText").value));

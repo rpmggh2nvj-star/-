@@ -127,6 +127,20 @@ const STYLE_TOKEN = {
 };
 const STYLE_RE_ONE = /^(?:逃げ|先行|差し|追込|追い込み|自在|マクリ|捲り|逃|先|差|追)$/;
 
+// 人名（騎手）らしいトークン。見出し語や競馬場名は騎手ではない。
+const NOT_A_PERSON = new Set([
+  "馬名","騎手","厩舎","概舎","調教師","性齢","斤量","人気","馬体重","増減","馬番","枠番","枠",
+  "前走","二走前","三走前","単勝","複勝","オッズ","脚質","予想","印","切替","調教","評価",
+  "中央","地方","距離","馬場","発走","本日","結果","成績","出走","除外","取消","中止",
+  "美浦","栗東","南関","公営"
+]);
+const PERSON_RE = /^[一-龥ぁ-んァ-ヴー]{2,6}$/;
+function isPerson(s, trackNames){
+  if(!PERSON_RE.test(s) || NOT_A_PERSON.has(s)) return false;
+  if(trackNames && trackNames.has(s)) return false;   // 厩舎欄の所属地は騎手ではない
+  return true;
+}
+
 // 着順の表記。取消・中止などは「出走なし（0）」として扱う。
 const CHAKU_RE_ONE = /^(?:\d{1,2}着|中止|取消|除外|失格|再審|[-－―])$/;
 function chakuValue(s){
@@ -167,19 +181,31 @@ function parseColumnar(t){
   for(let k=best.start;k<best.start+N;k++) used[k] = true;
 
   // 未使用のトークンからN個連続するブロックを探して確保する
-  function take(test, extra){
-    for(let s=0; s + N <= tok.length; s++){
-      let ok = true;
-      for(let k=0;k<N;k++){
-        if(used[s+k] || !test(tok[s+k])){ ok = false; break; }
+  // afterLabel を渡すと、その見出し語より後ろのブロックを優先する。
+  // 騎手と厩舎のように見た目が同じ列が並ぶ場合の取り違えを防ぐ。
+  function take(test, extra, afterLabel){
+    const scan = from => {
+      for(let s=from; s + N <= tok.length; s++){
+        let ok = true;
+        for(let k=0;k<N;k++){
+          if(used[s+k] || !test(tok[s+k])){ ok = false; break; }
+        }
+        if(!ok) continue;
+        const vals = tok.slice(s, s + N);
+        if(extra && !extra(vals)) continue;
+        for(let k=0;k<N;k++) used[s+k] = true;
+        return vals;
       }
-      if(!ok) continue;
-      const vals = tok.slice(s, s + N);
-      if(extra && !extra(vals)) continue;
-      for(let k=0;k<N;k++) used[s+k] = true;
-      return vals;
+      return null;
+    };
+    if(afterLabel){
+      const at = tok.indexOf(afterLabel);
+      if(at >= 0){
+        const hit = scan(at + 1);
+        if(hit) return hit;
+      }
     }
-    return null;
+    return scan(0);
   }
 
   // 数値域の狭いものから確保して、取り違えを防ぐ
@@ -194,6 +220,9 @@ function parseColumnar(t){
     const ns = v.map(Number).slice().sort((a,b) => a-b);
     return ns.every((x,k) => x === k + 1);
   });
+  // 騎手の列。厩舎欄と見分けるため見出し「騎手」の後ろを優先する。
+  const trackNames = new Set(ENGINE ? ENGINE.TRACK_KEYS.map(k => ENGINE.TRACKS[k].name) : []);
+  const jockey = take(s => isPerson(s, trackNames), null, "騎手");
   // 脚質の列（載っているサイトのみ）
   const style  = take(s => STYLE_RE_ONE.test(s));
   // 近走着順の列。左から順に前走・2走前・3走前とみなす。
@@ -225,6 +254,7 @@ function parseColumnar(t){
       h._got.push("性齢");
     }
     if(ninki){ h.pop = Number(ninki[k]); h._got.push("人気"); }
+    if(jockey){ h.jockeyName = jockey[k]; h._got.push("騎手名"); }
     if(style){ h.style = STYLE_TOKEN[style[k]] || h.style; h._got.push("脚質"); }
     if(chaku.length){
       chaku.forEach((col, i) => { h["last" + (i+1)] = chakuValue(col[k]); });
@@ -256,8 +286,146 @@ function parseColumnar(t){
   return {horses, warnings, columnar: true};
 }
 
+/* ============================================================
+   netkeiba の馬柱形式（PDF）の解析
+   ------------------------------------------------------------
+   1頭が6行のブロックで構成される。表形式ではないため、
+   行・列いずれの解析でも読めない（父名・母名・前走相手の馬名が
+   混ざり、馬名を取り違える）。ブロック構造そのものを読む。
+
+     A 父名        性齢・毛色   過去4走の日付
+     B 馬名        クラスと着順（4走ぶん）
+     C 母名(母父)  騎手
+     D 枠 馬番 印  厩舎 …（過去4走の頭数・人気・騎手・馬体重）
+     E 調教師 馬主 斤量 …（過去4走の距離・馬場・タイム）
+     F 脚質 オッズ(人気) …（過去4走の相手）
+   ============================================================ */
+const KIN_CELL = /^[▲△☆◇★]?(\d{2}(?:\.\d)?)$/;
+
+function parseNetkeiba(text){
+  const lines = normalize(text).split("\n");
+  const cells = lines.map(l => l.split("\t").map(s => s.trim()));
+
+  // D行（枠・馬番で始まり、厩舎が「場・調教師」の形で入る行）を探す
+  const anchors = [];
+  cells.forEach((c, i) => {
+    if(c.length < 4) return;
+    if(!/^\d{1,2}$/.test(c[0]) || !/^\d{1,2}$/.test(c[1])) return;
+    if(!c.slice(2, 6).some(x => /^[^\s]+・[^\s]+$/.test(x))) return;
+    if(i < 3 || i + 2 >= cells.length) return;
+    anchors.push(i);
+  });
+  if(anchors.length < 2) return null;
+
+  const horses = [];
+  const warnings = [];
+  anchors.forEach(i => {
+    const A = cells[i-3], B = cells[i-2], C = cells[i-1];
+    const D = cells[i],   E = cells[i+1], F = cells[i+2];
+
+    const num = Number(D[1]);
+    if(!(num >= 1 && num <= 18)) return;
+    const h = ENGINE ? ENGINE.defaultHorse(num) : {num: num};
+    h._got = [];
+
+    // 馬名（B行の先頭）。父名はA行、母名はC行にある。
+    if(B[0] && NAME_ONE.test(B[0])){ h.name = B[0]; h._got.push("馬名"); }
+
+    // 性齢（A行の2列目「牝5 栗」）
+    const sa = (A[1] || "").match(/(牡|牝|セン|セ|騸)(\d{1,2})/);
+    if(sa){ h.sex = sa[1] === "騸" ? "セ" : sa[1]; h.age = Number(sa[2]); h._got.push("性齢"); }
+
+    // 騎手（C行の末尾。「替」が入る場合はその後ろ）
+    const jk = C.slice(1).filter(x => x && x !== "替" && PERSON_RE.test(x));
+    if(jk.length){ h.jockeyName = jk[jk.length - 1]; h._got.push("騎手名"); }
+
+    // 斤量（E行で最初に現れる 47〜63 の値。▲△などの減量記号は外す）
+    const kin = E.find(x => KIN_CELL.test(x) && (() => {
+      const v = Number(x.match(KIN_CELL)[1]); return v >= 47 && v <= 63;
+    })());
+    if(kin){ h.kinryo = Number(kin.match(KIN_CELL)[1]); h._got.push("斤量"); }
+
+    // 脚質（F行の先頭）とオッズ・人気（F行の2列目「50.0 (5人気)」）
+    if(F[0] && STYLE_TOKEN[F[0]]){ h.style = STYLE_TOKEN[F[0]]; h._got.push("脚質"); }
+    const od = (F[1] || "").match(/(\d{1,4}\.\d)\s*\((\d{1,2})人気\)/);
+    if(od){
+      h.odds = Number(od[1]);
+      h.pop = Number(od[2]);
+      h._got.push("オッズ");
+      h._got.push("人気");
+    }
+
+    // 近走着順（B行の、馬名以降にある「数字だけのセル」）
+    const chaku = B.slice(1).filter(x => /^\d{1,2}$/.test(x)).map(Number);
+    if(chaku.length){
+      h.last1 = chaku[0] || 0;
+      h.last2 = chaku[1] || 0;
+      h.last3 = chaku[2] || 0;
+      h._got.push("近走着順");
+    }
+
+    // 過去走の距離と馬場（E行）。適性の推定に使う。
+    const eLine = E.join("\t");
+    const dists = [];
+    const re = /(?:ダ|芝)(\d{3,4})/g;
+    let m;
+    while((m = re.exec(eLine)) !== null) dists.push(Number(m[1]));
+    const babas = (eLine.match(/[左右直]\s*(良|稍|重|不)/g) || [])
+      .map(x => x.replace(/[左右直]\s*/, ""));
+    h._past = chaku.map((pos, k) => ({pos: pos, dist: dists[k], baba: babas[k]}))
+                   .filter(p => p.pos > 0);
+
+    horses.push(h);
+  });
+
+  if(horses.length < 2) return null;
+  horses.sort((a, b) => a.num - b.num);
+  warnings.push("netkeibaの馬柱形式として読み取りました。");
+  return {horses, warnings, netkeiba: true};
+}
+
+/* ---------- 過去走から適性を推定する ----------
+   道悪・今回と近い距離での着順を、その馬の平均着順と比べる。
+   絶対的な着順ではなく「自分の平均より良いか」で見るため、
+   クラスの差に左右されにくい。 */
+function inferAptitude(horses, raceDistance){
+  const grade = diff =>
+    diff >= 1.5 ? 3 : diff >= 0 ? 2 : diff >= -1.5 ? 1 : 0;
+
+  horses.forEach(h => {
+    const past = h._past || [];
+    if(past.length < 2) return;
+    const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+    const all = avg(past.map(p => p.pos));
+
+    // 馬場適性：稍重・重・不良での成績
+    const off = past.filter(p => /稍|重|不/.test(p.baba || "")).map(p => p.pos);
+    if(off.length){
+      h.baba = grade(all - avg(off));      // 平均より良ければ加点
+      h._got.push("馬場適性");
+    }
+
+    // 距離適性：今回と±200m以内での成績
+    if(raceDistance){
+      const near = past.filter(p => p.dist && Math.abs(p.dist - raceDistance) <= 200)
+                       .map(p => p.pos);
+      if(near.length){
+        h.dist = grade(all - avg(near));
+        h._got.push("距離適性");
+      }
+    }
+  });
+}
+
 // 行方向・列方向の両方で試して、より多く読めた方を採用する
-function parseHorses(text){
+function parseHorses(text, raceDistance){
+  // netkeibaの馬柱形式は構造がまったく違うので最優先で試す
+  const nk = parseNetkeiba(text);
+  if(nk && nk.horses.length >= 2){
+    inferAptitude(nk.horses, raceDistance);
+    return {horses: nk.horses, netkeiba: true,
+            warnings: nk.warnings.concat(summarize(nk.horses))};
+  }
   const row = parseRowwise(text);
   const col = parseColumnar(normalize(text));
   if(col && col.horses.length > row.horses.length){
@@ -313,8 +481,14 @@ function parseRowwise(text){
       skipped.push(c.name);
       return;
     }
-    const segEnd = (i + 1 < cands.length) ? cands[i + 1].start : t.length;
-    found.push({num, name: c.name, seg: t.slice(c.end, segEnd)});
+    found.push({num, name: c.name, start: c.start, end: c.end});
+  });
+
+  // 各馬の区間は「次に採用した馬の直前」まで。候補で区切ると、
+  // カタカナの騎手名（デムーロ等）で区間が途中で切れてしまう。
+  found.forEach((f, i) => {
+    const segEnd = (i + 1 < found.length) ? found[i + 1].start : t.length;
+    f.seg = t.slice(f.end, segEnd);
   });
 
   if(!found.length){
@@ -378,6 +552,14 @@ function parseRowwise(text){
     const pop = seg.match(/(\d{1,2})\s*番?人気/);
     if(pop){ h.pop = Number(pop[1]); h._got.push("人気"); }
 
+    // 騎手名（斤量・オッズを取り除いた後に最初に現れる人名らしい語）
+    const trackNames2 = new Set(ENGINE ? ENGINE.TRACK_KEYS.map(k => ENGINE.TRACKS[k].name) : []);
+    const jk = seg.match(/(?:^|[\s\t])([一-龥ぁ-んァ-ヴー]{2,6})(?=[\s\t]|$)/g);
+    if(jk){
+      const cand = jk.map(x => x.trim()).find(x => isPerson(x, trackNames2));
+      if(cand){ h.jockeyName = cand; h._got.push("騎手名"); }
+    }
+
     // 脚質（載っているサイトのみ。厩舎名などに紛れないよう単独の語に限る）
     const st = seg.match(/(?:^|[\s\t])(逃げ|先行|差し|追込|追い込み|自在|マクリ|逃|先|差|追)(?=[\s\t]|$)/);
     if(st){ h.style = STYLE_TOKEN[st[1]] || h.style; h._got.push("脚質"); }
@@ -405,7 +587,9 @@ function parseRacecard(input, opts){
     ? htmlToText(raw) : raw;
 
   const r = detectRace(text);
-  const h = parseHorses(text);
+  const h = parseHorses(text, r.race.distance);
+  // 馬柱には過去走のレース名・R番号が並ぶ。今回のものと取り違えるので使わない。
+  if(h.netkeiba){ delete r.race.name; delete r.race.raceNo; }
   return {
     race: r.race,
     horses: h.horses,

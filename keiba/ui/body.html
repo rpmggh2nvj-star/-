@@ -130,6 +130,21 @@
     <p class="empty" id="emptyMsg">出走馬を追加してください。「サンプル読込」でも試せます。</p>
   </section>
 
+  <!-- 騎手評価 -->
+  <section class="panel" id="jockeyPanel" hidden>
+    <div class="panel-head">
+      <h2>騎手評価</h2>
+      <span class="hint" id="jockeyCount"></span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnJockeyReset">記憶を消す</button>
+    </div>
+    <p class="hint" style="margin:-6px 0 12px">
+      一度つけた評価はこの端末に記憶され、次回以降その騎手が出てきたら自動で入ります。
+      同じ騎手が乗る複数の馬にまとめて反映されます。
+    </p>
+    <div id="jockeyList"></div>
+  </section>
+
   <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
 
   <!-- 結果 -->
