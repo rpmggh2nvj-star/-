@@ -574,6 +574,33 @@ const closeImport = () => { $("importBox").hidden = true; };
 $("btnImportClose").addEventListener("click", closeImport);
 $("btnImportClose2").addEventListener("click", closeImport);
 $("btnImportClose3").addEventListener("click", closeImport);
+$("btnImportClose4").addEventListener("click", closeImport);
+
+/* ---------- 画像を参照用に表示する ----------
+   ブラウザ内で日本語を文字起こしする実用的な手段がないため、画像から
+   自動入力はしない。代わりに、入力しながら見比べられるように表示する。 */
+let refUrl = null;
+function showReference(file){
+  if(refUrl) URL.revokeObjectURL(refUrl);
+  refUrl = URL.createObjectURL(file);
+  $("refImage").src = refUrl;
+  $("refPanel").hidden = false;
+  showResult(true, "画像を表示しました。", [
+    "下の「参照画像」で拡大しながら、出走馬の欄に入力できます。",
+    "端末の文字認識でテキストにできる場合は「貼り付け」タブの方が速く確実です（手順はこのタブの中にあります）。"
+  ]);
+  setTimeout(() => $("refPanel").scrollIntoView({behavior:"smooth", block:"start"}), 200);
+}
+$("imageFile").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if(f) showReference(f);
+});
+$("btnRefClose").addEventListener("click", () => {
+  $("refPanel").hidden = true;
+  if(refUrl){ URL.revokeObjectURL(refUrl); refUrl = null; }
+  $("refImage").removeAttribute("src");
+});
 
 // タブ切替
 document.querySelectorAll(".tab").forEach(btn => {
@@ -582,6 +609,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b === btn));
     $("tabPaste").hidden = on !== "paste";
     $("tabPdf").hidden   = on !== "pdf";
+    $("tabImage").hidden = on !== "image";
     $("tabJson").hidden  = on !== "json";
     $("importResult").hidden = true;
   });
@@ -626,6 +654,12 @@ $("pasteText").addEventListener("paste", e => {
   }
   if(hasImage && !hasText){
     e.preventDefault();
+    for(const it of items){
+      if(it.kind === "file" && /^image\//.test(it.type)){
+        const f = it.getAsFile();
+        if(f){ showReference(f); return; }
+      }
+    }
     showResult(false, "画像は直接読み取れません。端末の文字認識をお使いください。", [
       "iPhone: 写真アプリでその画像を開き、右下の「テキスト認識表示」（枠に囲まれた文字のマーク）をタップ → 文字を長押し →「すべて選択」→「コピー」",
       "Android: Googleフォトやレンズでその画像を開き、テキストを選択 →「コピー」",

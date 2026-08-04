@@ -117,6 +117,9 @@ const NOT_A_NAME = new Set([
 
 const NAME_RE = /[ァ-ヴ][ァ-ヴー]{2,8}/g;
 const NAME_ONE = /^[ァ-ヴ][ァ-ヴー]{2,8}$/;
+// 馬名は2〜9文字。ブロック解析は行の役割が確定しているので2文字も許す。
+// 行・列の緩い解析で2文字を許すと見出し語を拾いやすいため、そちらは3文字以上のまま。
+const NAME_BLOCK = /^[ァ-ヴ][ァ-ヴー]{1,8}$/;
 
 // 脚質の表記ゆれ。サイトによって1文字だったり語だったりする。
 const STYLE_TOKEN = {
@@ -310,7 +313,7 @@ function parseNetkeiba(text){
   // 行数がずれても壊れないようにするため。
   const isSire   = c => c.length > 1 && /^(?:牡|牝|セン?|騸)\d{1,2}/.test(c[1]);
   const isDam    = c => c.length > 0 && /^[ァ-ヴ][ァ-ヴー]{1,9}\s*\(/.test(c[0]);
-  const isHorse  = c => c.length > 0 && NAME_ONE.test(c[0]);
+  const isHorse  = c => c.length > 0 && NAME_BLOCK.test(c[0]);
   const isKinryo = c => c.some(x => /^(?:ダ|芝)\d{3,4}$/.test(x)) &&
                         c.some(x => KIN_CELL.test(x) && inKinRange(x));
   const isOdds   = c => c.length > 1 && /\d{1,4}\.\d\s*\(\d{1,2}人気\)/.test(c[1]);
@@ -349,8 +352,13 @@ function parseNetkeiba(text){
     };
     const A = findIn(above, isSire);
     const C = findIn(above, isDam);
-    // 馬名行は、父名行でも母名行でもない「カタカナで始まる行」
-    const B = findIn(above, c => isHorse(c) && !isSire(c) && !isDam(c));
+    /* 馬名行は、父名行でも母名行でもない「カタカナで始まる行」。
+       母父が併記されていない馬は母名行が括弧を持たず isDam に当たらないため、
+       アンカーのすぐ上（＝母名の行）も候補から外す。
+       ただし他に候補がなければ、その行を使う。 */
+    const notSireDam = c => isHorse(c) && !isSire(c) && !isDam(c);
+    const B = findIn(above.filter(k => k !== i - 1), notSireDam)
+           || findIn(above, notSireDam);
     const E = findIn(below, isKinryo);
     const F = findIn(below, isOdds) || findIn(below, c => c.length && STYLE_TOKEN[c[0]]);
     const D = cells[i];

@@ -29,6 +29,7 @@
       <div class="tabs" role="tablist">
         <button type="button" class="tab on" data-tab="paste" role="tab">貼り付け</button>
         <button type="button" class="tab" data-tab="pdf" role="tab">PDF</button>
+        <button type="button" class="tab" data-tab="image" role="tab">画像</button>
         <button type="button" class="tab" data-tab="json" role="tab">JSON</button>
       </div>
 
@@ -42,6 +43,27 @@
         <div class="btn-row">
           <button type="button" class="ghost" id="btnImportClose3">閉じる</button>
         </div>
+      </div>
+
+      <div id="tabImage" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          画像そのものから文字を読み取ることはできません（下の注意を参照）。
+          画像を選ぶと<b>見ながら入力できるように画面上部へ表示</b>します。
+          端末の文字認識でテキストにできる場合は「貼り付け」タブの方が確実です。
+        </p>
+        <input type="file" id="imageFile" accept="image/*">
+        <div class="btn-row">
+          <button type="button" class="ghost" id="btnImportClose4">閉じる</button>
+        </div>
+        <details class="guide">
+          <summary>端末の文字認識でテキストにする手順</summary>
+          <p class="hint" style="margin:8px 0 0">
+            <b>iPhone</b>：写真アプリで画像を開き、右下の「テキスト認識表示」（枠に囲まれた文字のマーク）を
+            タップ → 文字を長押し →「すべて選択」→「コピー」。<br>
+            <b>Android</b>：Googleフォトやレンズで画像を開き、テキストを選択 →「コピー」。<br>
+            コピーできたら「貼り付け」タブに貼って「読み取る」を押してください。
+          </p>
+        </details>
       </div>
 
       <div id="tabPaste">
@@ -113,6 +135,17 @@
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
     </p>
+  </section>
+
+  <!-- 参照画像 -->
+  <section class="panel" id="refPanel" hidden>
+    <div class="panel-head">
+      <h2>参照画像</h2>
+      <span class="hint">入力しながら見比べられます</span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnRefClose">閉じる</button>
+    </div>
+    <div class="ref-wrap"><img id="refImage" alt="読み込んだ出馬表の画像"></div>
   </section>
 
   <!-- 出走馬 -->

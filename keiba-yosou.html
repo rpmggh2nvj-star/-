@@ -414,6 +414,14 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
 .res-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;}
 .res-form input{width:68px;}
 .res-form button{padding:6px 10px;font-size:.78rem;}
+
+/* ---------- 参照画像 ---------- */
+.ref-wrap{
+  border:1px solid var(--line);border-radius:10px;background:var(--field);
+  overflow:auto;max-height:60vh;
+}
+.ref-wrap img{display:block;width:100%;height:auto;}
+.import input[type=file]{width:100%;}
 </style>
 </head>
 <body>
@@ -448,6 +456,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
       <div class="tabs" role="tablist">
         <button type="button" class="tab on" data-tab="paste" role="tab">貼り付け</button>
         <button type="button" class="tab" data-tab="pdf" role="tab">PDF</button>
+        <button type="button" class="tab" data-tab="image" role="tab">画像</button>
         <button type="button" class="tab" data-tab="json" role="tab">JSON</button>
       </div>
 
@@ -461,6 +470,27 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
         <div class="btn-row">
           <button type="button" class="ghost" id="btnImportClose3">閉じる</button>
         </div>
+      </div>
+
+      <div id="tabImage" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          画像そのものから文字を読み取ることはできません（下の注意を参照）。
+          画像を選ぶと<b>見ながら入力できるように画面上部へ表示</b>します。
+          端末の文字認識でテキストにできる場合は「貼り付け」タブの方が確実です。
+        </p>
+        <input type="file" id="imageFile" accept="image/*">
+        <div class="btn-row">
+          <button type="button" class="ghost" id="btnImportClose4">閉じる</button>
+        </div>
+        <details class="guide">
+          <summary>端末の文字認識でテキストにする手順</summary>
+          <p class="hint" style="margin:8px 0 0">
+            <b>iPhone</b>：写真アプリで画像を開き、右下の「テキスト認識表示」（枠に囲まれた文字のマーク）を
+            タップ → 文字を長押し →「すべて選択」→「コピー」。<br>
+            <b>Android</b>：Googleフォトやレンズで画像を開き、テキストを選択 →「コピー」。<br>
+            コピーできたら「貼り付け」タブに貼って「読み取る」を押してください。
+          </p>
+        </details>
       </div>
 
       <div id="tabPaste">
@@ -532,6 +562,17 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
     </p>
+  </section>
+
+  <!-- 参照画像 -->
+  <section class="panel" id="refPanel" hidden>
+    <div class="panel-head">
+      <h2>参照画像</h2>
+      <span class="hint">入力しながら見比べられます</span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnRefClose">閉じる</button>
+    </div>
+    <div class="ref-wrap"><img id="refImage" alt="読み込んだ出馬表の画像"></div>
   </section>
 
   <!-- 出走馬 -->
@@ -1151,6 +1192,9 @@ const NOT_A_NAME = new Set([
 
 const NAME_RE = /[ァ-ヴ][ァ-ヴー]{2,8}/g;
 const NAME_ONE = /^[ァ-ヴ][ァ-ヴー]{2,8}$/;
+// 馬名は2〜9文字。ブロック解析は行の役割が確定しているので2文字も許す。
+// 行・列の緩い解析で2文字を許すと見出し語を拾いやすいため、そちらは3文字以上のまま。
+const NAME_BLOCK = /^[ァ-ヴ][ァ-ヴー]{1,8}$/;
 
 // 脚質の表記ゆれ。サイトによって1文字だったり語だったりする。
 const STYLE_TOKEN = {
@@ -1344,7 +1388,7 @@ function parseNetkeiba(text){
   // 行数がずれても壊れないようにするため。
   const isSire   = c => c.length > 1 && /^(?:牡|牝|セン?|騸)\d{1,2}/.test(c[1]);
   const isDam    = c => c.length > 0 && /^[ァ-ヴ][ァ-ヴー]{1,9}\s*\(/.test(c[0]);
-  const isHorse  = c => c.length > 0 && NAME_ONE.test(c[0]);
+  const isHorse  = c => c.length > 0 && NAME_BLOCK.test(c[0]);
   const isKinryo = c => c.some(x => /^(?:ダ|芝)\d{3,4}$/.test(x)) &&
                         c.some(x => KIN_CELL.test(x) && inKinRange(x));
   const isOdds   = c => c.length > 1 && /\d{1,4}\.\d\s*\(\d{1,2}人気\)/.test(c[1]);
@@ -1383,8 +1427,13 @@ function parseNetkeiba(text){
     };
     const A = findIn(above, isSire);
     const C = findIn(above, isDam);
-    // 馬名行は、父名行でも母名行でもない「カタカナで始まる行」
-    const B = findIn(above, c => isHorse(c) && !isSire(c) && !isDam(c));
+    /* 馬名行は、父名行でも母名行でもない「カタカナで始まる行」。
+       母父が併記されていない馬は母名行が括弧を持たず isDam に当たらないため、
+       アンカーのすぐ上（＝母名の行）も候補から外す。
+       ただし他に候補がなければ、その行を使う。 */
+    const notSireDam = c => isHorse(c) && !isSire(c) && !isDam(c);
+    const B = findIn(above.filter(k => k !== i - 1), notSireDam)
+           || findIn(above, notSireDam);
     const E = findIn(below, isKinryo);
     const F = findIn(below, isOdds) || findIn(below, c => c.length && STYLE_TOKEN[c[0]]);
     const D = cells[i];
@@ -1750,7 +1799,7 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml, norma
         if(d <= tol && d < bestD){ best = r; bestD = d; }
       }
       if(!best){ best = {y: y, cells: []}; rows.push(best); }
-      best.cells.push({x: x, s: it.str});
+      best.cells.push({x: x, s: it.str, w: it.width || 0, h: it.height || 0});
     });
 
     rows.sort((a, b) => b.y - a.y);                   // 上の行から
@@ -2510,6 +2559,33 @@ const closeImport = () => { $("importBox").hidden = true; };
 $("btnImportClose").addEventListener("click", closeImport);
 $("btnImportClose2").addEventListener("click", closeImport);
 $("btnImportClose3").addEventListener("click", closeImport);
+$("btnImportClose4").addEventListener("click", closeImport);
+
+/* ---------- 画像を参照用に表示する ----------
+   ブラウザ内で日本語を文字起こしする実用的な手段がないため、画像から
+   自動入力はしない。代わりに、入力しながら見比べられるように表示する。 */
+let refUrl = null;
+function showReference(file){
+  if(refUrl) URL.revokeObjectURL(refUrl);
+  refUrl = URL.createObjectURL(file);
+  $("refImage").src = refUrl;
+  $("refPanel").hidden = false;
+  showResult(true, "画像を表示しました。", [
+    "下の「参照画像」で拡大しながら、出走馬の欄に入力できます。",
+    "端末の文字認識でテキストにできる場合は「貼り付け」タブの方が速く確実です（手順はこのタブの中にあります）。"
+  ]);
+  setTimeout(() => $("refPanel").scrollIntoView({behavior:"smooth", block:"start"}), 200);
+}
+$("imageFile").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if(f) showReference(f);
+});
+$("btnRefClose").addEventListener("click", () => {
+  $("refPanel").hidden = true;
+  if(refUrl){ URL.revokeObjectURL(refUrl); refUrl = null; }
+  $("refImage").removeAttribute("src");
+});
 
 // タブ切替
 document.querySelectorAll(".tab").forEach(btn => {
@@ -2518,6 +2594,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b === btn));
     $("tabPaste").hidden = on !== "paste";
     $("tabPdf").hidden   = on !== "pdf";
+    $("tabImage").hidden = on !== "image";
     $("tabJson").hidden  = on !== "json";
     $("importResult").hidden = true;
   });
@@ -2562,6 +2639,12 @@ $("pasteText").addEventListener("paste", e => {
   }
   if(hasImage && !hasText){
     e.preventDefault();
+    for(const it of items){
+      if(it.kind === "file" && /^image\//.test(it.type)){
+        const f = it.getAsFile();
+        if(f){ showReference(f); return; }
+      }
+    }
     showResult(false, "画像は直接読み取れません。端末の文字認識をお使いください。", [
       "iPhone: 写真アプリでその画像を開き、右下の「テキスト認識表示」（枠に囲まれた文字のマーク）をタップ → 文字を長押し →「すべて選択」→「コピー」",
       "Android: Googleフォトやレンズでその画像を開き、テキストを選択 →「コピー」",

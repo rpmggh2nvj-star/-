@@ -37,7 +37,7 @@
         if(d <= tol && d < bestD){ best = r; bestD = d; }
       }
       if(!best){ best = {y: y, cells: []}; rows.push(best); }
-      best.cells.push({x: x, s: it.str});
+      best.cells.push({x: x, s: it.str, w: it.width || 0, h: it.height || 0});
     });
 
     rows.sort((a, b) => b.y - a.y);                   // 上の行から
