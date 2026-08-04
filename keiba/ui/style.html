@@ -213,6 +213,17 @@ button.danger{color:var(--red);border-color:var(--red-line);background:var(--red
 .horse-top input.name{flex:1 1 auto;font-weight:700;}
 .horse-fields{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));}
 .rm{flex:0 0 auto;padding:6px 10px;font-size:.78rem;}
+/* 出走取消 */
+.scr{
+  flex:0 0 auto;display:flex;align-items:center;gap:4px;
+  font-size:.76rem;color:var(--ink-soft);white-space:nowrap;cursor:pointer;
+}
+.scr input{width:16px;height:16px;accent-color:var(--red);}
+.horse.scratched{opacity:.6;background:var(--paper);}
+.horse.scratched .horse-fields{filter:grayscale(1);}
+.horse.scratched .umaban{background:var(--line);color:var(--ink-soft);}
+.horse.scratched input.name{text-decoration:line-through;}
+.horse.scratched .scr{color:var(--red);font-weight:700;opacity:1;}
 
 /* ---------- Results ---------- */
 #results{display:none;}

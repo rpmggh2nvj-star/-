@@ -312,4 +312,32 @@ t("逃げ馬が多いとハイ、いないとスローになる", () => {
                                  horse(3,{style:"sashi"})]).pace, "mid");
 });
 
+console.log("\n■ 出走取消");
+
+t("取消馬は予想に出ず、勝率の分母にも入らない", () => {
+  const hs = field(8).map((h,i) => Object.assign(h, {odds: 2 + i*2}));
+  hs[3].scratched = true;
+  const rows = E.analyze(race(), hs);
+  assert.strictEqual(rows.length, 7, "予想対象: " + rows.length);
+  assert.ok(!rows.some(x => x.h.num === 4), "取消馬が残っている");
+  const sum = rows.reduce((a,x) => a + x.prob, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9, "勝率の合計が1でない: " + sum);
+});
+
+t("取消馬を外すと、残った馬の推定勝率が上がる", () => {
+  // 人気馬が取消になった分は、他の馬に配分される
+  const base = field(6).map((h,i) => Object.assign(h, {odds: [1.5,4,6,8,12,20][i]}));
+  const before = E.analyze(race(), base).find(x => x.h.num === 2).prob;
+  const after = E.analyze(race(), base.map((h,i) =>
+    Object.assign({}, h, {scratched: i === 0}))).find(x => x.h.num === 2).prob;
+  assert.ok(after > before, `取消後に勝率が上がっていない: ${before} → ${after}`);
+});
+
+t("ペース自動判定は取消馬を数えない", () => {
+  const hs = field(6, {style:"oikomi"});
+  [0,1,2].forEach(i => Object.assign(hs[i], {style:"nige", scratched:true}));
+  assert.strictEqual(E.autoPace(hs).nige, 0);
+  assert.strictEqual(E.autoPace(hs).pace, "slow");
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

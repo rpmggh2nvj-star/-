@@ -330,4 +330,31 @@ t("騎手名がない出馬表では設定しない", () => {
   assert.ok(r.horses.every(h => !h.jockeyName), "騎手名を誤検出している");
 });
 
+console.log("\n■ 出走取消・除外");
+
+t("行方向：オッズ欄が「取消」の馬を取消として読み取る", () => {
+  const r = P.parseRacecard([
+    "馬番 馬名 性齢 単勝 斤量 騎手",
+    "1 ミナミノヒカリ 牡4 2.4 56.0 御神本訓史",
+    "2 シオカゼクイーン 牝5 取消 54.0 森泰斗",
+    "3 オオイノオウジャ 牡6 6.3 57.0 矢野貴之"
+  ].join("\n"));
+  assert.deepStrictEqual(r.horses.map(h => !!h.scratched), [false, true, false]);
+  assert.ok(r.warnings.some(w => /出走取消・除外として読み取りました/.test(w)),
+    "取消の注意が出ていない: " + JSON.stringify(r.warnings));
+});
+
+t("近走の「取消」を今回の取消と取り違えない", () => {
+  // 近走着順の欄に出る取消は過去の話。今回は普通に出走する。
+  const r = P.parseRacecard([
+    "馬番 馬名 単勝 前走 二走前 三走前",
+    "1 ミナミノヒカリ 2.4 3着 取消 5着",
+    "2 シオカゼクイーン 5.6 1着 2着 4着"
+  ].join("\n"));
+  assert.ok(r.horses.every(h => !h.scratched),
+    "過去走の取消を今回の取消にしている");
+  assert.strictEqual(find(r.horses,1).last2, 0, "取消は0着として位置を残す");
+  assert.strictEqual(find(r.horses,1).last3, 5);
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

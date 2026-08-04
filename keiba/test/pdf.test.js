@@ -265,5 +265,58 @@ function polyfill(){
     assert.ok(!E.isValue(ls), `317倍に妙味（市場比 ${ls.edge.toFixed(2)}）`);
   });
 
+
+  /* ---- 門別10R（過去走のレース名がカタカナ＋出走取消あり） ---- */
+  const m10Buf = fs.readFileSync(path.join(__dirname, "fixture-monbetsu10r.pdf"));
+  const m10 = await PDF.pdfToText(new Uint8Array(m10Buf), globalThis.pdfjsLib);
+  const M10 = P.parseRacecard(m10.text, {html:false});
+
+  console.log("\n■ 門別10R（レース名が馬名と紛らわしいPDF）");
+
+  t("レース名の行を馬名として拾わない", () => {
+    /* このPDFの過去走レース名は「ロードカナロア賞」。紙面で「ロードカナ」に
+       切れるため、カタカナの馬名と字面で区別できない。5頭ぶんが同じ
+       「ロードカナ」になっていた。馬名行は父名行のすぐ下、で判別する。 */
+    assert.deepStrictEqual(M10.horses.map(h => h.name),
+      ["リアルガー","アドルナティック","カツノトキメキ","ゲームアップロード",
+       "エイイチ","ワチュゴナドゥ","ライルアケカイ","ミソタロ","ファーマドール"]);
+  });
+
+  t("出走取消・除外の馬を取消として読み取る", () => {
+    const scr = M10.horses.filter(h => h.scratched);
+    assert.strictEqual(scr.length, 1, "取消頭数: " + scr.length);
+    assert.strictEqual(scr[0].num, 5);
+    assert.strictEqual(scr[0].name, "エイイチ");
+    assert.ok(M10.warnings.some(w => /出走取消・除外として読み取りました/.test(w)),
+      "取消の注意が出ていない");
+  });
+
+  t("取消馬は予想の対象から外れる", () => {
+    const rows = E.analyze(Object.assign({pace:"mid", condition:0, budget:5000}, M10.race), M10.horses);
+    assert.strictEqual(rows.length, 8, "予想対象: " + rows.length);
+    assert.ok(!rows.some(x => x.h.num === 5), "取消馬が予想に残っている");
+    const sum = rows.reduce((a, x) => a + x.prob, 0);
+    assert.ok(Math.abs(sum - 1) < 1e-9, "勝率の合計が1でない: " + sum);
+  });
+
+  t("オッズ・斤量・脚質・近走着順を出走馬ぶん読み取る", () => {
+    const live = M10.horses.filter(h => !h.scratched);
+    assert.deepStrictEqual(live.map(h => h.odds),
+      [9.0, 11.8, 6.8, 5.2, 9.2, 2.7, 8.3, 7.9]);
+    assert.deepStrictEqual(live.map(h => h.kinryo), [57, 57, 56, 57, 57, 57, 58, 55]);
+    assert.deepStrictEqual(live.map(h => h.style),
+      ["sashi","oikomi","sashi","sashi","sashi","sashi","senko","sashi"]);
+    // 前走・2走前・3走前（馬名行に前走から順に並ぶ）
+    assert.deepStrictEqual(M10.horses[0].last1, 6);
+    assert.deepStrictEqual(M10.horses[3].last1, 6);
+    assert.deepStrictEqual(M10.horses[7].last1, 2);
+  });
+
+  t("過去走が除外でも近走着順がずれない", () => {
+    // 3番カツノトキメキの4走前は「除」。前3走は 6・4・1。
+    const h = M10.horses.find(x => x.num === 3);
+    assert.deepStrictEqual([h.last1, h.last2, h.last3], [6, 4, 1]);
+  });
+
   console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");
 })().catch(e => { console.error("実行エラー:", e.message); process.exit(1); });

@@ -174,10 +174,13 @@ function opts(list, sel){
 
 function renderHorses(){
   $("horseList").innerHTML = horses.map(h => `
-    <div class="horse" data-id="${h.id}">
+    <div class="horse${h.scratched ? " scratched" : ""}" data-id="${h.id}">
       <div class="horse-top">
         <div class="umaban">${h.num}</div>
         <input class="name" type="text" data-f="name" value="${escapeAttr(h.name)}" placeholder="馬名（任意）">
+        <label class="scr" title="出走取消・除外の馬は予想の対象から外します">
+          <input type="checkbox" data-f="scratched"${h.scratched ? " checked" : ""}>取消
+        </label>
         <button type="button" class="danger rm" data-rm="1">削除</button>
       </div>
       <div class="horse-fields">
@@ -224,7 +227,8 @@ function renderHorses(){
     </div>`).join("");
 
   $("emptyMsg").style.display = horses.length ? "none" : "block";
-  $("countLabel").textContent = horses.length + "頭";
+  const scr = horses.filter(h => h.scratched).length;
+  $("countLabel").textContent = (horses.length - scr) + "頭" + (scr ? `（取消 ${scr}頭）` : "");
 }
 
 function horseById(el){
@@ -246,6 +250,15 @@ $("horseList").addEventListener("input", e => {
 });
 $("horseList").addEventListener("change", e => {
   const f = e.target.dataset.f;
+  if(f === "scratched"){
+    const {card, h} = horseById(e.target);
+    if(!h) return;
+    h.scratched = e.target.checked;
+    card.classList.toggle("scratched", h.scratched);
+    const scr = horses.filter(x => x.scratched).length;
+    $("countLabel").textContent = (horses.length - scr) + "頭" + (scr ? `（取消 ${scr}頭）` : "");
+    return;
+  }
   if(f && e.target.tagName === "SELECT"){
     const {h} = horseById(e.target);
     if(!h) return;
@@ -293,14 +306,16 @@ function setHorses(list){
    ============================================================ */
 function run(){
   const r = race();
-  const hs = horses.filter(h => h.num > 0);
-  if(hs.length < 3){ alert("出走馬を3頭以上入力してください。"); return; }
+  const all = horses.filter(h => h.num > 0);
+  const scratched = all.filter(h => h.scratched);
+  const hs = all.filter(h => !h.scratched);          // 取消馬は走らないので外す
+  if(hs.length < 3){ alert("出走する馬を3頭以上入力してください（取消の馬は数えません）。"); return; }
 
   const seen = new Set();
-  for(const h of hs){
+  for(const h of all){
     if(seen.has(h.num)){ alert("馬番 " + h.num + " が重複しています。"); return; }
     seen.add(h.num);
-    if(h.odds < 1){ alert("オッズは1.0以上で入力してください（馬番 " + h.num + "）。"); return; }
+    if(!h.scratched && h.odds < 1){ alert("オッズは1.0以上で入力してください（馬番 " + h.num + "）。"); return; }
   }
 
   const rows = E.analyze(r, hs);
@@ -315,7 +330,8 @@ function run(){
 
   $("resultRace").textContent =
     `${t ? t.name : ""}${t ? "（" + (t.area === "jra" ? "中央" : t.area === "nankan" ? "南関" : "地方") + "）" : ""}・` +
-    `${sName}${r.distance}m・${outer}${cName}・想定${pName}ペース・${hs.length}頭`;
+    `${sName}${r.distance}m・${outer}${cName}・想定${pName}ペース・${hs.length}頭` +
+    (scratched.length ? `（取消 ${scratched.map(h => h.num + "番").join("・")}）` : "");
 
   $("verdict").innerHTML =
     escapeHtml(verdict.title) +
@@ -438,8 +454,10 @@ function importPaste(text, sourceLabel){
   if(r.race && Object.keys(r.race).length) applyRace(r.race);
   setHorses(r.horses.map(h => { const c = Object.assign({}, h); delete c._got; return c; }));
 
-  const n = r.horses.length;
-  const got = key => r.horses.filter(h => (h._got || []).indexOf(key) >= 0).length;
+  // 取消馬にはオッズも馬体重も出ないので、読み取り率の分母から外す
+  const live = r.horses.filter(h => !h.scratched);
+  const n = live.length;
+  const got = key => live.filter(h => (h._got || []).indexOf(key) >= 0).length;
   const lines = [`オッズ ${got("オッズ")}/${n}頭 ・ 斤量 ${got("斤量")}/${n}頭 ・ 馬体重 ${got("馬体重")}/${n}頭`];
   if(got("近走着順") || got("脚質")){
     lines.push(`近走着順 ${got("近走着順")}/${n}頭 ・ 脚質 ${got("脚質")}/${n}頭`);
@@ -465,7 +483,9 @@ function importPaste(text, sourceLabel){
                "取れない場合は下の一覧に手で入れてください（この2つが予想の精度を大きく左右します）。");
   }
 
-  showResult(true, `${sourceLabel || ""}${n}頭を読み取りました。`, lines);
+  const scrN = r.horses.length - n;
+  showResult(true, `${sourceLabel || ""}${n}頭を読み取りました。` +
+                   (scrN ? `（ほかに取消 ${scrN}頭）` : ""), lines);
   $("pasteText").value = "";
   setTimeout(() => $("horseList").scrollIntoView({behavior:"smooth", block:"start"}), 200);
 }

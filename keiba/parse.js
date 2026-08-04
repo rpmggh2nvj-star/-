@@ -304,6 +304,12 @@ function parseColumnar(t){
      F 脚質 オッズ(人気) …（過去4走の相手）
    ============================================================ */
 const KIN_CELL = /^[▲△☆◇★]?(\d{2}(?:\.\d)?)$/;
+// 出走取消・除外。印の欄（通常は「--」）に入る。
+const SCRATCH_CELL = /^(?:出走取消|競走除外|発走除外|取消|除外)$/;
+// 過去走の着順欄に入る「着順以外」の結果
+const NO_FINISH_CELL = /^(?:除|取|中|失|降)$/;
+// 過去走の条件欄（別定・馬齢など）。レース名の行を馬名の行と取り違えないために使う。
+const COND_CELL = /^(?:牝限)?(?:別定|定量|馬齢|ハンデ|限定量|限別定)$/;
 
 function parseNetkeiba(text){
   const lines = normalize(text).split("\n");
@@ -317,6 +323,9 @@ function parseNetkeiba(text){
   const isKinryo = c => c.some(x => /^(?:ダ|芝)\d{3,4}$/.test(x)) &&
                         c.some(x => KIN_CELL.test(x) && inKinRange(x));
   const isOdds   = c => c.length > 1 && /\d{1,4}\.\d\s*\(\d{1,2}人気\)/.test(c[1]);
+  /* 過去走のレース名が並ぶ行。「ロードカナロア賞」のように紙面で切れると
+     カタカナの馬名と見分けが付かないので、隣に並ぶ条件欄（別定・馬齢など）で判定する。 */
+  const isRaceName = c => c.filter(x => COND_CELL.test(x)).length >= 2;
 
   // D行（枠・馬番で始まり、厩舎が「場・調教師」の形で入る行）を探す
   const anchors = [];
@@ -346,19 +355,31 @@ function parseNetkeiba(text){
     const below = [];
     for(let k = i + 1; k < nextAnchor && k <= i + 5; k++) below.push(k);
 
-    const findIn = (idxs, test) => {
-      for(const k of idxs) if(test(cells[k])) return cells[k];
-      return null;
+    const findIdx = (idxs, test) => {
+      for(const k of idxs) if(test(cells[k])) return k;
+      return -1;
     };
-    const A = findIn(above, isSire);
+    const findIn = (idxs, test) => {
+      const k = findIdx(idxs, test);
+      return k < 0 ? null : cells[k];
+    };
+    const ai = findIdx(above, isSire);
+    const A = ai < 0 ? null : cells[ai];
     const C = findIn(above, isDam);
-    /* 馬名行は、父名行でも母名行でもない「カタカナで始まる行」。
-       母父が併記されていない馬は母名行が括弧を持たず isDam に当たらないため、
-       アンカーのすぐ上（＝母名の行）も候補から外す。
+    /* 馬名行は父名行のすぐ下。これは紙面の並びで決まっているので最優先で使う。
+       （下から探すと、レース名の行や母名の行を先に拾ってしまう。
+         レース名は「ロードカナロア賞」のように紙面で切れると馬名と区別できない） */
+    let B = null;
+    if(ai >= 0 && ai + 1 < i && isHorse(cells[ai + 1])) B = cells[ai + 1];
+    /* 父名行が読めなかったときの保険。父名行でも母名行でもレース名行でもない
+       「カタカナで始まる行」を探す。母父が併記されていない馬は母名行が括弧を
+       持たず isDam に当たらないため、アンカーのすぐ上（＝母名の行）も候補から外す。
        ただし他に候補がなければ、その行を使う。 */
-    const notSireDam = c => isHorse(c) && !isSire(c) && !isDam(c);
-    const B = findIn(above.filter(k => k !== i - 1), notSireDam)
-           || findIn(above, notSireDam);
+    const notSireDam = c => isHorse(c) && !isSire(c) && !isDam(c) && !isRaceName(c);
+    if(!B){
+      B = findIn(above.filter(k => k !== i - 1), notSireDam)
+       || findIn(above, notSireDam);
+    }
     const E = findIn(below, isKinryo);
     const F = findIn(below, isOdds) || findIn(below, c => c.length && STYLE_TOKEN[c[0]]);
     const D = cells[i];
@@ -371,6 +392,12 @@ function parseNetkeiba(text){
     h._got = [];
     h.name = B[0];
     h._got.push("馬名");
+
+    // 出走取消・除外（印の欄に入る）
+    if(D.slice(2, 4).some(x => SCRATCH_CELL.test(x))){
+      h.scratched = true;
+      h._got.push("出走取消");
+    }
 
     if(A){
       const sa = A[1].match(/(牡|牝|セン|セ|騸)(\d{1,2})/);
@@ -400,9 +427,15 @@ function parseNetkeiba(text){
       }
     }
 
-    // 近走着順（馬名行の、数字だけのセル）
-    const chaku = B.slice(1).filter(x => /^\d{1,2}$/.test(x)).map(Number);
-    if(chaku.length){
+    /* 近走着順（馬名行に、前走から順に並ぶ）。
+       除外・中止などは着順が無いので0として位置だけ残す。
+       詰めてしまうと「前走が除外の馬」で1走ぶんずれる。 */
+    const chaku = [];
+    B.slice(1).forEach(x => {
+      if(/^\d{1,2}$/.test(x)) chaku.push(Number(x));
+      else if(NO_FINISH_CELL.test(x)) chaku.push(0);
+    });
+    if(chaku.some(v => v > 0)){
       h.last1 = chaku[0] || 0;
       h.last2 = chaku[1] || 0;
       h.last3 = chaku[2] || 0;
@@ -521,8 +554,18 @@ function parseHorses(text, raceDistance){
 // 取得状況の要約（どちらの解析でも共通）
 function summarize(horses){
   const out = [];
-  const n = horses.length;
-  const gotCount = key => horses.filter(h => (h._got || []).indexOf(key) >= 0).length;
+  // 取消馬はオッズも馬体重も出ないので、読み取り率の分母から外す
+  const live = horses.filter(h => !h.scratched);
+  const scratched = horses.filter(h => h.scratched);
+  const n = live.length;
+  const gotCount = key => live.filter(h => (h._got || []).indexOf(key) >= 0).length;
+
+  if(scratched.length){
+    out.push("出走取消・除外として読み取りました: " +
+      scratched.map(h => `${h.num}番 ${h.name || "（馬名不明）"}`).join("、") +
+      "。予想の対象から外しています。");
+  }
+
   const missing = [];
   ["オッズ", "斤量", "馬体重"].forEach(k => {
     const g = gotCount(k);
@@ -530,7 +573,11 @@ function summarize(horses){
     else if(g < n) missing.push(`${k}（${g}/${n}頭のみ）`);
   });
   if(missing.length) out.push("読み取れなかった項目があります: " + missing.join("、"));
-  out.push("近走着順・騎手評価・調教評価・距離/馬場適性・脚質は出馬表から一意に決められないため、既定値のままです。予想前に調整してください。");
+
+  // 既定値のままになった項目だけを挙げる（読めた項目まで「未入力」と言わない）
+  const left = ["近走着順", "脚質", "距離適性", "馬場適性"].filter(k => gotCount(k) === 0);
+  left.push("騎手評価", "調教評価");
+  out.push(left.join("・") + "は出馬表から一意に決められないため、既定値のままです。予想前に調整してください。");
   return out;
 }
 
@@ -597,6 +644,17 @@ function parseRowwise(text){
     h.name = f.name;
     h._got = [];
     let seg = f.seg;
+
+    /* 出走取消・除外。
+       近走着順の欄にも「取消」が出るため、最初の「◯着」より前にある
+       ものだけを今回の取消として扱う（4文字の表記は位置を問わない）。 */
+    const firstChaku = seg.search(/\d{1,2}着/);
+    const head = firstChaku >= 0 ? seg.slice(0, firstChaku) : seg;
+    if(/出走取消|競走除外|発走除外/.test(seg) ||
+       /(?:^|[\s\t])(?:取消|除外)(?=[\s\t]|$)/.test(head)){
+      h.scratched = true;
+      h._got.push("出走取消");
+    }
 
     // 馬体重（480(+4) / 480(-6) / 480(0)）— 最も特徴的なので先に取り除く
     const wt = seg.match(/(\d{3})\s*\(\s*([+\-]?\d{1,3}|前計不|計不)\s*\)/);

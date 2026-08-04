@@ -139,6 +139,11 @@
      本体：能力指数 → 推定勝率
      ============================================================ */
   function analyze(r, hs){
+    /* 出走取消・除外の馬は走らない。オッズも付かないため、
+       残したままだと市場推定勝率の分母が狂い、枠順の有利不利もずれる。 */
+    hs = hs.filter(h => !h.scratched);
+    if(!hs.length) return [];
+
     // 市場推定勝率（控除率を除くため合計1に正規化）
     const impl = hs.map(h => 1 / Math.max(1.0, h.odds));
     const implSum = impl.reduce((a,b)=>a+b, 0);
@@ -325,11 +330,12 @@
     return {num:num, name:"", odds:10,
             last1:0, last2:0, last3:0,
             jockey:3, training:3, dist:2, baba:2,
-            kinryo:55, wdiff:0, style:"senko"};
+            kinryo:55, wdiff:0, style:"senko", scratched:false};
   }
 
   /* ---------- 想定ペースの自動判定 ---------- */
   function autoPace(hs){
+    hs = hs.filter(h => !h.scratched);
     const nige  = hs.filter(h => h.style === "nige").length;
     const senko = hs.filter(h => h.style === "senko").length;
     let v = "mid";
