@@ -321,4 +321,23 @@ select:disabled,input:disabled{opacity:.55;cursor:not-allowed;}
   background:var(--blue-tint);border:1px solid var(--blue-line);
   color:var(--blue);font-size:.78rem;line-height:1.6;
 }
+
+/* ---------- 読み取りパネルのタブと結果 ---------- */
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:10px;}
+button.tab{
+  border:none;background:transparent;color:var(--ink-soft);
+  border-bottom:2px solid transparent;border-radius:0;
+  padding:6px 10px;font-size:.82rem;
+}
+button.tab:hover{border-color:transparent transparent var(--line);}
+button.tab.on{color:var(--turf);border-bottom-color:var(--turf);}
+
+.import-result{
+  border-radius:10px;padding:10px 12px;font-size:.78rem;line-height:1.6;
+  border:1px solid var(--line);background:var(--paper);
+}
+.import-result.ok{background:var(--turf-tint);border-color:var(--turf);}
+.import-result.ng{background:var(--red-tint);border-color:var(--red-line);color:var(--red);}
+.import-result ul{margin:6px 0 0;padding-left:1.2em;}
+.import-result li{margin:2px 0;}
 </style>

@@ -9,9 +9,11 @@
    拾うため、レイアウトが変わっても壊れにくい。
    取れなかった項目は既定値のままにし、warnings で必ず報告する。
    ============================================================ */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./engine.js"));
+  else root.TurfParse = factory(root.TurfEngine);
+})(typeof self !== "undefined" ? self : this, function (ENGINE) {
 "use strict";
-
-const ENGINE = (typeof require === "function") ? require("./engine.js") : null;
 
 /* ---------- HTML → テキスト ---------- */
 function htmlToText(html){
@@ -246,4 +248,5 @@ function parseRacecard(input, opts){
   };
 }
 
-module.exports = {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml, normalize};
+return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml, normalize};
+});

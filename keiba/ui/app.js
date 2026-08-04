@@ -323,24 +323,61 @@ function load(){
   }catch(e){ alert("読込に失敗しました：" + e.message); }
 }
 
+/* ---------- 読み取り結果の表示 ---------- */
+function showResult(ok, title, lines){
+  const box = $("importResult");
+  box.hidden = false;
+  box.className = "import-result " + (ok ? "ok" : "ng");
+  box.innerHTML = `<b>${escapeHtml(title)}</b>` +
+    (lines.length ? "<ul>" + lines.map(l => `<li>${escapeHtml(l)}</li>`).join("") + "</ul>" : "");
+}
+
+/* ---------- 出馬表の貼り付け読み取り ---------- */
+function importPaste(text){
+  if(!text.trim()){
+    showResult(false, "出馬表を貼り付けてください。", []);
+    return;
+  }
+  const r = TurfParse.parseRacecard(text);
+  if(!r.horses.length){
+    showResult(false, "出走馬を読み取れませんでした。", r.warnings.concat([
+      "馬番と馬名が同じ行に並ぶ形（例: 1 ハヤテノオージ 56.0 480(+2) 5.8）でコピーしてください。"
+    ]));
+    return;
+  }
+
+  if(r.race && Object.keys(r.race).length) applyRace(r.race);
+  setHorses(r.horses.map(h => { const c = Object.assign({}, h); delete c._got; return c; }));
+
+  const n = r.horses.length;
+  const got = key => r.horses.filter(h => (h._got || []).indexOf(key) >= 0).length;
+  const lines = [`オッズ ${got("オッズ")}/${n}頭 ・ 斤量 ${got("斤量")}/${n}頭 ・ 馬体重 ${got("馬体重")}/${n}頭`];
+  const t = r.race && r.race.track && E.TRACKS[r.race.track];
+  if(t) lines.push(`レース条件: ${t.name}${r.race.distance ? " " + r.race.distance + "m" : ""}` +
+                   `${r.race.condition != null ? " 馬場" + (["良","稍重","重","不良"][r.race.condition]) : ""}`);
+  lines.push("近走着順と脚質は出馬表から決められません。下の一覧に入力すると予想の精度が上がります。");
+
+  showResult(true, `${n}頭を読み取りました。`, lines);
+  $("pasteText").value = "";
+  setTimeout(() => $("horseList").scrollIntoView({behavior:"smooth", block:"start"}), 200);
+}
+
 /* ---------- JSON読込（CLIの出力） ---------- */
 function importJson(text){
   let data;
   try{ data = JSON.parse(text); }
-  catch(e){ alert("JSONとして読めませんでした：" + e.message); return; }
+  catch(e){ showResult(false, "JSONとして読めませんでした。", [e.message]); return; }
 
   const list = Array.isArray(data) ? data : data.horses;
   if(!Array.isArray(list) || !list.length){
-    alert("horses が見つかりません。CLIが書き出したJSONを渡してください。");
+    showResult(false, "horses が見つかりません。", ["CLIが書き出したJSONを渡してください。"]);
     return;
   }
   if(data.race) applyRace(data.race);
   setHorses(list);
-  $("importBox").hidden = true;
   $("importText").value = "";
-
-  const warn = Array.isArray(data.warnings) ? data.warnings : [];
-  alert(`${list.length}頭を読み込みました。` + (warn.length ? "\n\n【確認】\n- " + warn.join("\n- ") : ""));
+  showResult(true, `${list.length}頭を読み込みました。`,
+             Array.isArray(data.warnings) ? data.warnings : []);
 }
 
 /* ---------- サンプル ---------- */
@@ -384,11 +421,27 @@ $("btnClear").addEventListener("click", () => {
 $("btnImport").addEventListener("click", () => {
   const box = $("importBox");
   box.hidden = !box.hidden;
+  if(!box.hidden) $("pasteText").focus();
 });
-$("btnImportClose").addEventListener("click", () => { $("importBox").hidden = true; });
+const closeImport = () => { $("importBox").hidden = true; };
+$("btnImportClose").addEventListener("click", closeImport);
+$("btnImportClose2").addEventListener("click", closeImport);
+
+// タブ切替
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const on = btn.dataset.tab;
+    document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b === btn));
+    $("tabPaste").hidden = on !== "paste";
+    $("tabJson").hidden  = on !== "json";
+    $("importResult").hidden = true;
+  });
+});
+
+$("btnPasteRun").addEventListener("click", () => importPaste($("pasteText").value));
 $("btnImportRun").addEventListener("click", () => {
   const txt = $("importText").value.trim();
-  if(!txt){ alert("JSONを貼り付けるか、ファイルを選んでください。"); return; }
+  if(!txt){ showResult(false, "JSONを貼り付けるか、ファイルを選んでください。", []); return; }
   importJson(txt);
 });
 $("importFile").addEventListener("change", e => {
@@ -396,7 +449,7 @@ $("importFile").addEventListener("change", e => {
   if(!f) return;
   const rd = new FileReader();
   rd.onload = () => importJson(String(rd.result));
-  rd.onerror = () => alert("ファイルを読めませんでした。");
+  rd.onerror = () => showResult(false, "ファイルを読めませんでした。", []);
   rd.readAsText(f, "utf-8");
   e.target.value = "";
 });

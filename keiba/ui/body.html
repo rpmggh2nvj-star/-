@@ -17,7 +17,7 @@
       <h2>レース設定</h2>
       <div class="spacer"></div>
       <div class="btn-row">
-        <button type="button" class="ghost" id="btnImport">JSON読込</button>
+        <button type="button" class="ghost" id="btnImport">出馬表を読み取る</button>
         <button type="button" class="ghost" id="btnSample">サンプル読込</button>
         <button type="button" class="ghost" id="btnSave">保存</button>
         <button type="button" class="ghost" id="btnLoad">呼出</button>
@@ -26,16 +26,36 @@
     </div>
 
     <div class="import" id="importBox" hidden>
-      <p class="hint" style="margin:0 0 8px">
-        CLI（<span class="mono">node keiba/yosou.js 出馬表.html --out race.json</span>）が書き出したJSONを読み込みます。
-        ファイルを選ぶか、内容を貼り付けてください。
-      </p>
-      <input type="file" id="importFile" accept=".json,application/json">
-      <textarea id="importText" rows="4" placeholder='{"race":{...},"horses":[...]}'></textarea>
-      <div class="btn-row">
-        <button type="button" class="primary" id="btnImportRun">読み込む</button>
-        <button type="button" class="ghost" id="btnImportClose">閉じる</button>
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab on" data-tab="paste" role="tab">出馬表を貼り付け</button>
+        <button type="button" class="tab" data-tab="json" role="tab">JSONから読込</button>
       </div>
+
+      <div id="tabPaste">
+        <p class="hint" style="margin:0 0 8px">
+          出馬表のページで表の部分を選択してコピーし、ここに貼り付けて「読み取る」を押してください。
+          馬番・馬名・オッズ・斤量・馬体重・レース条件を自動で入力します。
+        </p>
+        <textarea id="pasteText" rows="6" placeholder="1  ハヤテノオージ  牡3  56.0  武豊  480(+2)  5.8&#10;2  ミドリノカゼ  牝4  54.0  川田将雅  462(-6)  28.0&#10;…"></textarea>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnPasteRun">読み取る</button>
+          <button type="button" class="ghost" id="btnImportClose">閉じる</button>
+        </div>
+      </div>
+
+      <div id="tabJson" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          CLI（<span class="mono">node keiba/yosou.js 出馬表.html --out race.json</span>）が書き出したJSONを読み込みます。
+        </p>
+        <input type="file" id="importFile" accept=".json,application/json">
+        <textarea id="importText" rows="4" placeholder='{"race":{...},"horses":[...]}'></textarea>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnImportRun">読み込む</button>
+          <button type="button" class="ghost" id="btnImportClose2">閉じる</button>
+        </div>
+      </div>
+
+      <div class="import-result" id="importResult" hidden></div>
     </div>
 
     <div class="grid race-grid">
