@@ -192,5 +192,32 @@ function polyfill(){
     assert.ok(Math.abs(rows.reduce((a,x)=>a+x.prob,0) - 1) < 1e-9);
   });
 
+
+  t("今回の馬体重が載っていなければ拾わない（前走の値と混同しない）", () => {
+    // このPDFは発表前なので今回の馬体重はない。
+    // D行には前走の「486kg (+11)」があるが、それを今回の値にしてはいけない。
+    assert.ok(NK.horses.every(h => !h._got || h._got.indexOf("馬体重") < 0),
+      "前走の馬体重を今回の値として拾っている");
+    assert.ok(NK.horses.every(h => h.wdiff === 0), "馬体重増減が0でない");
+  });
+
+  t("紙面の申告頭数と読み取り数が食い違えば警告する", () => {
+    // 1頭ぶんのブロックから馬名行を壊して、読み取り数を減らす
+    const broken = nk.text.replace("マッドリボンガール\t", "\t");
+    const r = P.parseRacecard(broken, {html:false});
+    assert.ok(r.horses.length < 7, "テスト入力の細工が効いていない: " + r.horses.length);
+    assert.ok(r.warnings.some(w => /読み取り漏れ/.test(w)),
+      "頭数の食い違いを警告していない: " + JSON.stringify(r.warnings));
+  });
+
+  t("行の役割を位置ではなく中身で見分ける（余分な行が入ってもずれない）", () => {
+    // ブロックの間に余計な行が入っても読めること
+    const padded = nk.text.split("\n").map(l => l + "\n（広告）").join("\n");
+    const r = P.parseRacecard(padded, {html:false});
+    assert.strictEqual(r.horses.length, 7, "頭数: " + r.horses.length);
+    assert.deepStrictEqual(r.horses.map(h => h.odds),
+      [50.0, 79.9, 2.7, 4.8, 5.3, 2.3, 50.3]);
+  });
+
   console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");
 })().catch(e => { console.error("実行エラー:", e.message); process.exit(1); });

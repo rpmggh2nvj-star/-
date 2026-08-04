@@ -306,56 +306,93 @@ function parseNetkeiba(text){
   const lines = normalize(text).split("\n");
   const cells = lines.map(l => l.split("\t").map(s => s.trim()));
 
+  // 行の役割は位置ではなく中身で見分ける。過去走の本数などで
+  // 行数がずれても壊れないようにするため。
+  const isSire   = c => c.length > 1 && /^(?:牡|牝|セン?|騸)\d{1,2}/.test(c[1]);
+  const isDam    = c => c.length > 0 && /^[ァ-ヴ][ァ-ヴー]{1,9}\s*\(/.test(c[0]);
+  const isHorse  = c => c.length > 0 && NAME_ONE.test(c[0]);
+  const isKinryo = c => c.some(x => /^(?:ダ|芝)\d{3,4}$/.test(x)) &&
+                        c.some(x => KIN_CELL.test(x) && inKinRange(x));
+  const isOdds   = c => c.length > 1 && /\d{1,4}\.\d\s*\(\d{1,2}人気\)/.test(c[1]);
+
   // D行（枠・馬番で始まり、厩舎が「場・調教師」の形で入る行）を探す
   const anchors = [];
   cells.forEach((c, i) => {
     if(c.length < 4) return;
     if(!/^\d{1,2}$/.test(c[0]) || !/^\d{1,2}$/.test(c[1])) return;
     if(!c.slice(2, 6).some(x => /^[^\s]+・[^\s]+$/.test(x))) return;
-    if(i < 3 || i + 2 >= cells.length) return;
     anchors.push(i);
   });
   if(anchors.length < 2) return null;
 
+  // 出走頭数の申告（見出しの「7頭」）。読み取り結果の検算に使う。
+  let declared = 0;
+  for(let i = 0; i < Math.min(14, cells.length); i++){
+    const m = cells[i].join("\t").match(/(\d{1,2})頭/);
+    if(m){ declared = Number(m[1]); break; }
+  }
+
   const horses = [];
   const warnings = [];
-  anchors.forEach(i => {
-    const A = cells[i-3], B = cells[i-2], C = cells[i-1];
-    const D = cells[i],   E = cells[i+1], F = cells[i+2];
+  anchors.forEach((i, idx) => {
+    const prevAnchor = idx > 0 ? anchors[idx-1] : -1;
+    const nextAnchor = idx + 1 < anchors.length ? anchors[idx+1] : cells.length;
+    // 前後のブロックに食い込まない範囲で役割ごとの行を探す
+    const above = [];
+    for(let k = i - 1; k > prevAnchor && k >= i - 6; k--) above.push(k);
+    const below = [];
+    for(let k = i + 1; k < nextAnchor && k <= i + 5; k++) below.push(k);
+
+    const findIn = (idxs, test) => {
+      for(const k of idxs) if(test(cells[k])) return cells[k];
+      return null;
+    };
+    const A = findIn(above, isSire);
+    const C = findIn(above, isDam);
+    // 馬名行は、父名行でも母名行でもない「カタカナで始まる行」
+    const B = findIn(above, c => isHorse(c) && !isSire(c) && !isDam(c));
+    const E = findIn(below, isKinryo);
+    const F = findIn(below, isOdds) || findIn(below, c => c.length && STYLE_TOKEN[c[0]]);
+    const D = cells[i];
 
     const num = Number(D[1]);
     if(!(num >= 1 && num <= 18)) return;
+    if(!B) return;                     // 馬名が取れない行はブロックとして扱わない
+
     const h = ENGINE ? ENGINE.defaultHorse(num) : {num: num};
     h._got = [];
+    h.name = B[0];
+    h._got.push("馬名");
 
-    // 馬名（B行の先頭）。父名はA行、母名はC行にある。
-    if(B[0] && NAME_ONE.test(B[0])){ h.name = B[0]; h._got.push("馬名"); }
-
-    // 性齢（A行の2列目「牝5 栗」）
-    const sa = (A[1] || "").match(/(牡|牝|セン|セ|騸)(\d{1,2})/);
-    if(sa){ h.sex = sa[1] === "騸" ? "セ" : sa[1]; h.age = Number(sa[2]); h._got.push("性齢"); }
-
-    // 騎手（C行の末尾。「替」が入る場合はその後ろ）
-    const jk = C.slice(1).filter(x => x && x !== "替" && PERSON_RE.test(x));
-    if(jk.length){ h.jockeyName = jk[jk.length - 1]; h._got.push("騎手名"); }
-
-    // 斤量（E行で最初に現れる 47〜63 の値。▲△などの減量記号は外す）
-    const kin = E.find(x => KIN_CELL.test(x) && (() => {
-      const v = Number(x.match(KIN_CELL)[1]); return v >= 47 && v <= 63;
-    })());
-    if(kin){ h.kinryo = Number(kin.match(KIN_CELL)[1]); h._got.push("斤量"); }
-
-    // 脚質（F行の先頭）とオッズ・人気（F行の2列目「50.0 (5人気)」）
-    if(F[0] && STYLE_TOKEN[F[0]]){ h.style = STYLE_TOKEN[F[0]]; h._got.push("脚質"); }
-    const od = (F[1] || "").match(/(\d{1,4}\.\d)\s*\((\d{1,2})人気\)/);
-    if(od){
-      h.odds = Number(od[1]);
-      h.pop = Number(od[2]);
-      h._got.push("オッズ");
-      h._got.push("人気");
+    if(A){
+      const sa = A[1].match(/(牡|牝|セン|セ|騸)(\d{1,2})/);
+      if(sa){ h.sex = sa[1] === "騸" ? "セ" : sa[1]; h.age = Number(sa[2]); h._got.push("性齢"); }
     }
 
-    // 近走着順（B行の、馬名以降にある「数字だけのセル」）
+    // 騎手（母名行の末尾。「替」が入る場合はその後ろ）
+    if(C){
+      const jk = C.slice(1).filter(x => x && x !== "替" && PERSON_RE.test(x));
+      if(jk.length){ h.jockeyName = jk[jk.length - 1]; h._got.push("騎手名"); }
+    }
+
+    // 斤量（▲△などの減量記号を外す）
+    if(E){
+      const kin = E.find(x => KIN_CELL.test(x) && inKinRange(x));
+      if(kin){ h.kinryo = Number(kin.match(KIN_CELL)[1]); h._got.push("斤量"); }
+    }
+
+    // 脚質・オッズ・人気
+    if(F){
+      if(F[0] && STYLE_TOKEN[F[0]]){ h.style = STYLE_TOKEN[F[0]]; h._got.push("脚質"); }
+      const od = F.join("\t").match(/(\d{1,4}\.\d)\s*\((\d{1,2})人気\)/);
+      if(od){
+        h.odds = Number(od[1]);
+        h.pop = Number(od[2]);
+        h._got.push("オッズ"); h._got.push("人気");
+      }
+    }
+
+    // 近走着順（馬名行の、数字だけのセル）
     const chaku = B.slice(1).filter(x => /^\d{1,2}$/.test(x)).map(Number);
     if(chaku.length){
       h.last1 = chaku[0] || 0;
@@ -364,16 +401,28 @@ function parseNetkeiba(text){
       h._got.push("近走着順");
     }
 
-    // 過去走の距離と馬場（E行）。適性の推定に使う。
-    const eLine = E.join("\t");
-    const dists = [];
-    const re = /(?:ダ|芝)(\d{3,4})/g;
-    let m;
-    while((m = re.exec(eLine)) !== null) dists.push(Number(m[1]));
-    const babas = (eLine.match(/[左右直]\s*(良|稍|重|不)/g) || [])
-      .map(x => x.replace(/[左右直]\s*/, ""));
-    h._past = chaku.map((pos, k) => ({pos: pos, dist: dists[k], baba: babas[k]}))
-                   .filter(p => p.pos > 0);
+    // 今回の馬体重。D行の「486kg (+11)」は前走の値なので使わない。
+    // 発表済みの場合に別の行へ出るため、D行以外から探す。
+    const others = [A, B, C, E, F].filter(Boolean).map(c => c.join("\t")).join("\t");
+    const wt = others.match(/(?:^|[\s\t])(\d{3})\s*(?:kg)?\s*\(\s*([+\-]?\d{1,3})\s*\)/);
+    if(wt && Number(wt[1]) >= 300 && Number(wt[1]) <= 700){
+      h.weight = Number(wt[1]);
+      h.wdiff = Number(wt[2]);
+      h._got.push("馬体重");
+    }
+
+    // 過去走の距離と馬場（適性の推定に使う）
+    if(E){
+      const eLine = E.join("\t");
+      const dists = [];
+      const re = /(?:ダ|芝)(\d{3,4})/g;
+      let m;
+      while((m = re.exec(eLine)) !== null) dists.push(Number(m[1]));
+      const babas = (eLine.match(/[左右直]\s*(良|稍|重|不)/g) || [])
+        .map(x => x.replace(/[左右直]\s*/, ""));
+      h._past = chaku.map((pos, k) => ({pos: pos, dist: dists[k], baba: babas[k]}))
+                     .filter(p => p.pos > 0);
+    }
 
     horses.push(h);
   });
@@ -381,7 +430,17 @@ function parseNetkeiba(text){
   if(horses.length < 2) return null;
   horses.sort((a, b) => a.num - b.num);
   warnings.push("netkeibaの馬柱形式として読み取りました。");
+  if(declared && declared !== horses.length){
+    warnings.push(`紙面には ${declared}頭 とありますが ${horses.length}頭 しか読み取れませんでした。読み取り漏れがある可能性があります。`);
+  }
   return {horses, warnings, netkeiba: true};
+}
+
+function inKinRange(x){
+  const m = String(x).match(KIN_CELL);
+  if(!m) return false;
+  const v = Number(m[1]);
+  return v >= 47 && v <= 63;
 }
 
 /* ---------- 過去走から適性を推定する ----------
