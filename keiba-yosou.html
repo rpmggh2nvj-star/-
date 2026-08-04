@@ -699,26 +699,41 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
      出典は各主催者の公式コース図。外回りがある場合は course:"outer" で切り替える。 */
   const TRACKS = {
     // ---- 中央（JRA） ----
-    sapporo:  {name:"札幌", org:"jra", straight:{turf:266, dirt:264}},
-    hakodate: {name:"函館", org:"jra", straight:{turf:262, dirt:260}},
-    fukushima:{name:"福島", org:"jra", straight:{turf:292, dirt:296}},
-    niigata:  {name:"新潟", org:"jra", straight:{turf:359, dirt:354}, outer:{turf:659}},
-    tokyo:    {name:"東京", org:"jra", straight:{turf:526, dirt:502}},
-    nakayama: {name:"中山", org:"jra", straight:{turf:310, dirt:308}},
-    chukyo:   {name:"中京", org:"jra", straight:{turf:413, dirt:411}},
-    kyoto:    {name:"京都", org:"jra", straight:{turf:328, dirt:329}, outer:{turf:404}},
-    hanshin:  {name:"阪神", org:"jra", straight:{turf:357, dirt:353}, outer:{turf:474}},
-    kokura:   {name:"小倉", org:"jra", straight:{turf:293, dirt:291}},
+    sapporo:  {name:"札幌", org:"jra", area:"jra", straight:{turf:266, dirt:264}},
+    hakodate: {name:"函館", org:"jra", area:"jra", straight:{turf:262, dirt:260}},
+    fukushima:{name:"福島", org:"jra", area:"jra", straight:{turf:292, dirt:296}},
+    niigata:  {name:"新潟", org:"jra", area:"jra", straight:{turf:359, dirt:354}, outer:{turf:659}},
+    tokyo:    {name:"東京", org:"jra", area:"jra", straight:{turf:526, dirt:502}},
+    nakayama: {name:"中山", org:"jra", area:"jra", straight:{turf:310, dirt:308}},
+    chukyo:   {name:"中京", org:"jra", area:"jra", straight:{turf:413, dirt:411}},
+    kyoto:    {name:"京都", org:"jra", area:"jra", straight:{turf:328, dirt:329}, outer:{turf:404}},
+    hanshin:  {name:"阪神", org:"jra", area:"jra", straight:{turf:357, dirt:353}, outer:{turf:474}},
+    kokura:   {name:"小倉", org:"jra", area:"jra", straight:{turf:293, dirt:291}},
     // ---- 南関東（NAR） ---- いずれもダートのみ
-    ooi:      {name:"大井",   org:"nar", straight:{dirt:386}},
-    kawasaki: {name:"川崎",   org:"nar", straight:{dirt:300}},
-    funabashi:{name:"船橋",   org:"nar", straight:{dirt:308}},
-    urawa:    {name:"浦和",   org:"nar", straight:{dirt:220}}
+    ooi:      {name:"大井",   org:"nar", area:"nankan", straight:{dirt:386}},
+    kawasaki: {name:"川崎",   org:"nar", area:"nankan", straight:{dirt:300}},
+    funabashi:{name:"船橋",   org:"nar", area:"nankan", straight:{dirt:308}},
+    urawa:    {name:"浦和",   org:"nar", area:"nankan", straight:{dirt:220}},
+    // ---- その他の地方競馬 ----
+    // ばんえい（帯広）はソリを曳く直線200mの競走で、この予想モデルの
+    // 前提（周回コースの脚質・枠順）が当てはまらないため対象外にしている。
+    monbetsu: {name:"門別",   org:"nar", area:"chiho", straight:{dirt:330}},
+    morioka:  {name:"盛岡",   org:"nar", area:"chiho", straight:{dirt:300, turf:300}},
+    mizusawa: {name:"水沢",   org:"nar", area:"chiho", straight:{dirt:245}},
+    kanazawa: {name:"金沢",   org:"nar", area:"chiho", straight:{dirt:236}},
+    kasamatsu:{name:"笠松",   org:"nar", area:"chiho", straight:{dirt:201}},
+    nagoya:   {name:"名古屋", org:"nar", area:"chiho", straight:{dirt:240}},
+    sonoda:   {name:"園田",   org:"nar", area:"chiho", straight:{dirt:213}},
+    himeji:   {name:"姫路",   org:"nar", area:"chiho", straight:{dirt:230}},
+    kochi:    {name:"高知",   org:"nar", area:"chiho", straight:{dirt:200}},
+    saga:     {name:"佐賀",   org:"nar", area:"chiho", straight:{dirt:200}}
   };
 
   const TRACK_KEYS = Object.keys(TRACKS);
   const JRA_KEYS = TRACK_KEYS.filter(k => TRACKS[k].org === "jra");
   const NAR_KEYS = TRACK_KEYS.filter(k => TRACKS[k].org === "nar");
+  const NANKAN_KEYS = TRACK_KEYS.filter(k => TRACKS[k].area === "nankan");
+  const CHIHO_KEYS  = TRACK_KEYS.filter(k => TRACKS[k].area === "chiho");
 
   const STYLES = [
     {v:"nige",   label:"逃げ"},
@@ -851,8 +866,20 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       return {h, parts, score, market: impl[i] / implSum};
     });
 
-    // 能力指数 → モデル勝率（softmax）
-    const T = 11;
+    /* 能力指数 → モデル勝率（softmax）
+
+       温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
+       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
+       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
+       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
+       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
+    const std = arr => {
+      const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
+      return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
+    };
+    const marketSpread = Math.max(0.6, std(rows.map(x => Math.log(x.market))));
+    const scoreSpread = std(rows.map(x => x.score));
+    const T = Math.min(14, Math.max(4, scoreSpread / marketSpread));
     const maxScore = Math.max.apply(null, rows.map(x => x.score));
     const exps = rows.map(x => Math.exp((x.score - maxScore) / T));
     const expSum = exps.reduce((a,b)=>a+b, 0);
@@ -875,6 +902,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     rows.sort((a,b) => b.prob - a.prob);
     rows.forEach((x, i) => { x.rank = i + 1; });
     rows.infoLevel = info;
+    rows.temperature = T;
     rows.marketWeight = W;
     return rows;
   }
@@ -894,7 +922,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
 
     // 妙味馬（市場評価より高く評価できる馬。本命以外・オッズ4倍以上）
     const value = rows
-      .filter(x => x.h.num !== a && x.h.odds >= 4 && x.edge >= 1.15 && x.rank <= Math.min(8, rows.length))
+      .filter(x => x.h.num !== a && x.h.odds >= 4 && isValue(x) && x.rank <= Math.min(8, rows.length))
       .sort((x, y) => y.edge - x.edge)[0];
 
     const bets = [];
@@ -945,6 +973,21 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     return {bets: live, value, dropped};
   }
 
+  /* ---------- 妙味・過剰人気の判定 ----------
+     比率（市場比）だけで判定すると、もともと勝ち目のない馬で誤判定が出る。
+     300倍の馬の 0.25% が 0.40% になっても比率は1.6倍だが、差は0.15ポイントしかなく、
+     モデルにその精度はない。比率に加えて、勝率の絶対差も要求する。 */
+  const VALUE_EDGE = 1.20;         // 市場比がこれ以上
+  const VALUE_GAP  = 0.005;        // かつ勝率で0.5ポイント以上の上乗せ
+  const OVER_EDGE  = 0.80;
+
+  function isValue(x){
+    return x.edge >= VALUE_EDGE && (x.prob - x.market) >= VALUE_GAP;
+  }
+  function isOverbet(x){
+    return x.edge <= OVER_EDGE && (x.market - x.prob) >= VALUE_GAP;
+  }
+
   /* ---------- 総評 ---------- */
   function verdictOf(rows){
     const topProb = rows[0].prob;
@@ -980,10 +1023,11 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   }
 
   return {
-    TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS,
+    TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS, NANKAN_KEYS, CHIHO_KEYS,
     STYLES, STYLE_LABEL, PACE_BONUS, MARKS, MARK_NAME,
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
+    isValue, isOverbet, VALUE_EDGE, VALUE_GAP, OVER_EDGE,
     MAX_FIELD: 18
   };
 });
@@ -1391,15 +1435,32 @@ function parseNetkeiba(text){
       h._got.push("近走着順");
     }
 
-    // 今回の馬体重。D行の「486kg (+11)」は前走の値なので使わない。
-    // 発表済みの場合に別の行へ出るため、D行以外から探す。
-    const others = [A, B, C, E, F].filter(Boolean).map(c => c.join("\t")).join("\t");
-    const wt = others.match(/(?:^|[\s\t])(\d{3})\s*(?:kg)?\s*\(\s*([+\-]?\d{1,3})\s*\)/);
-    if(wt && Number(wt[1]) >= 300 && Number(wt[1]) <= 700){
-      h.weight = Number(wt[1]);
-      h.wdiff = Number(wt[2]);
+    /* 今回の馬体重。
+       D行に並ぶ「482kg (-6)」は過去走それぞれの馬体重であって今回の値ではない。
+       過去走の数（「9頭」の出現数）より馬体重の数が多ければ、余分な1つが
+       今回の発表値。同数なら今回の分は載っていない。
+       他の行に出る形式もあるため、そちらも探す。 */
+    const dLine = D.join("\t");
+    const pastCount = (dLine.match(/\d{1,2}頭/g) || []).length;
+    const weights = [];
+    const wre = /(\d{3})\s*kg\s*\(\s*([+\-]?\d{1,3})\s*\)/g;
+    let wm;
+    while((wm = wre.exec(dLine)) !== null) weights.push({w: Number(wm[1]), d: Number(wm[2])});
+
+    let today = null;
+    if(pastCount && weights.length > pastCount) today = weights[0];
+    if(!today){
+      const others = [A, B, C, E, F].filter(Boolean).map(c => c.join("\t")).join("\t");
+      const m2 = others.match(/(?:^|[\s\t])(\d{3})\s*(?:kg)?\s*\(\s*([+\-]?\d{1,3})\s*\)/);
+      if(m2) today = {w: Number(m2[1]), d: Number(m2[2])};
+    }
+    if(today && today.w >= 300 && today.w <= 700){
+      h.weight = today.w;
+      h.wdiff = today.d;
       h._got.push("馬体重");
     }
+    // 今回の値がなくても、前走の馬体重は参考として残す
+    if(!today && weights.length) h.prevWeight = weights[0].w;
 
     // 過去走の距離と馬場（適性の推定に使う）
     if(E){
@@ -1912,7 +1973,8 @@ function buildTrackSelect(){
     return g;
   };
   sel.appendChild(group("中央（JRA）", E.JRA_KEYS));
-  sel.appendChild(group("南関東（NAR）", E.NAR_KEYS));
+  sel.appendChild(group("南関東", E.NANKAN_KEYS));
+  sel.appendChild(group("その他の地方", E.CHIHO_KEYS));
   sel.value = "tokyo";
 }
 
@@ -1923,10 +1985,12 @@ function syncTrackUI(){
   if(!t) return;
   const isNar = t.org === "nar";
 
+  // 芝コースを持たない競馬場ではダートに固定する（地方の多くはダートのみ）
+  const noTurf = t.straight.turf == null && !(t.outer && t.outer.turf != null);
   const surf = $("surface");
-  surf.querySelector('option[value="turf"]').disabled = isNar;
-  if(isNar) surf.value = "dirt";
-  surf.disabled = isNar;
+  surf.querySelector('option[value="turf"]').disabled = noTurf;
+  if(noTurf) surf.value = "dirt";
+  surf.disabled = noTurf;
 
   const hasOuter = !!(t.outer && t.outer[surf.value] != null);
   $("courseWrap").hidden = !hasOuter;
@@ -1937,8 +2001,8 @@ function syncTrackUI(){
               : st >= 350 ? "標準的な直線"
               : st >= 290 ? "やや小回りで先行有利"
               : "小回りで逃げ・先行が有利";
-  $("trackNote").textContent =
-    `${t.name}（${isNar ? "南関" : "中央"}）・直線${st}m — ${shape}。`;
+  const area = t.area === "jra" ? "中央" : t.area === "nankan" ? "南関" : "地方";
+  $("trackNote").textContent = `${t.name}（${area}）・直線${st}m — ${shape}。`;
 }
 
 /* ---------- レース設定の読み書き ---------- */
@@ -2186,7 +2250,7 @@ function run(){
   const outer = (r.course === "outer" && t && t.outer && t.outer[r.surface] != null) ? "外回り・" : "";
 
   $("resultRace").textContent =
-    `${t ? t.name : ""}${t ? (t.org === "nar" ? "（南関）" : "（中央）") : ""}・` +
+    `${t ? t.name : ""}${t ? "（" + (t.area === "jra" ? "中央" : t.area === "nankan" ? "南関" : "地方") + "）" : ""}・` +
     `${sName}${r.distance}m・${outer}${cName}・想定${pName}ペース・${hs.length}頭`;
 
   $("verdict").innerHTML =
@@ -2217,8 +2281,8 @@ function run(){
     const markCls = i < 4 ? "m" + Math.min(i, 3) : "";
     const width = Math.max(4, Math.round((x.score - minScore) / span * 100));
     const tags = [`<span class="tag style">${E.STYLE_LABEL[x.h.style]}</span>`];
-    if(x.edge >= 1.20) tags.push(`<span class="tag value">妙味</span>`);
-    else if(x.edge <= 0.80) tags.push(`<span class="tag over">過剰人気</span>`);
+    if(E.isValue(x)) tags.push(`<span class="tag value">妙味</span>`);
+    else if(E.isOverbet(x)) tags.push(`<span class="tag over">過剰人気</span>`);
     return `
       <div class="rank${i === 0 ? " top" : ""}">
         <div class="mark ${markCls}" title="${i < E.MARK_NAME.length ? E.MARK_NAME[i] : ""}">${mark || (i+1)}</div>

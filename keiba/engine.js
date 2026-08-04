@@ -15,26 +15,41 @@
      出典は各主催者の公式コース図。外回りがある場合は course:"outer" で切り替える。 */
   const TRACKS = {
     // ---- 中央（JRA） ----
-    sapporo:  {name:"札幌", org:"jra", straight:{turf:266, dirt:264}},
-    hakodate: {name:"函館", org:"jra", straight:{turf:262, dirt:260}},
-    fukushima:{name:"福島", org:"jra", straight:{turf:292, dirt:296}},
-    niigata:  {name:"新潟", org:"jra", straight:{turf:359, dirt:354}, outer:{turf:659}},
-    tokyo:    {name:"東京", org:"jra", straight:{turf:526, dirt:502}},
-    nakayama: {name:"中山", org:"jra", straight:{turf:310, dirt:308}},
-    chukyo:   {name:"中京", org:"jra", straight:{turf:413, dirt:411}},
-    kyoto:    {name:"京都", org:"jra", straight:{turf:328, dirt:329}, outer:{turf:404}},
-    hanshin:  {name:"阪神", org:"jra", straight:{turf:357, dirt:353}, outer:{turf:474}},
-    kokura:   {name:"小倉", org:"jra", straight:{turf:293, dirt:291}},
+    sapporo:  {name:"札幌", org:"jra", area:"jra", straight:{turf:266, dirt:264}},
+    hakodate: {name:"函館", org:"jra", area:"jra", straight:{turf:262, dirt:260}},
+    fukushima:{name:"福島", org:"jra", area:"jra", straight:{turf:292, dirt:296}},
+    niigata:  {name:"新潟", org:"jra", area:"jra", straight:{turf:359, dirt:354}, outer:{turf:659}},
+    tokyo:    {name:"東京", org:"jra", area:"jra", straight:{turf:526, dirt:502}},
+    nakayama: {name:"中山", org:"jra", area:"jra", straight:{turf:310, dirt:308}},
+    chukyo:   {name:"中京", org:"jra", area:"jra", straight:{turf:413, dirt:411}},
+    kyoto:    {name:"京都", org:"jra", area:"jra", straight:{turf:328, dirt:329}, outer:{turf:404}},
+    hanshin:  {name:"阪神", org:"jra", area:"jra", straight:{turf:357, dirt:353}, outer:{turf:474}},
+    kokura:   {name:"小倉", org:"jra", area:"jra", straight:{turf:293, dirt:291}},
     // ---- 南関東（NAR） ---- いずれもダートのみ
-    ooi:      {name:"大井",   org:"nar", straight:{dirt:386}},
-    kawasaki: {name:"川崎",   org:"nar", straight:{dirt:300}},
-    funabashi:{name:"船橋",   org:"nar", straight:{dirt:308}},
-    urawa:    {name:"浦和",   org:"nar", straight:{dirt:220}}
+    ooi:      {name:"大井",   org:"nar", area:"nankan", straight:{dirt:386}},
+    kawasaki: {name:"川崎",   org:"nar", area:"nankan", straight:{dirt:300}},
+    funabashi:{name:"船橋",   org:"nar", area:"nankan", straight:{dirt:308}},
+    urawa:    {name:"浦和",   org:"nar", area:"nankan", straight:{dirt:220}},
+    // ---- その他の地方競馬 ----
+    // ばんえい（帯広）はソリを曳く直線200mの競走で、この予想モデルの
+    // 前提（周回コースの脚質・枠順）が当てはまらないため対象外にしている。
+    monbetsu: {name:"門別",   org:"nar", area:"chiho", straight:{dirt:330}},
+    morioka:  {name:"盛岡",   org:"nar", area:"chiho", straight:{dirt:300, turf:300}},
+    mizusawa: {name:"水沢",   org:"nar", area:"chiho", straight:{dirt:245}},
+    kanazawa: {name:"金沢",   org:"nar", area:"chiho", straight:{dirt:236}},
+    kasamatsu:{name:"笠松",   org:"nar", area:"chiho", straight:{dirt:201}},
+    nagoya:   {name:"名古屋", org:"nar", area:"chiho", straight:{dirt:240}},
+    sonoda:   {name:"園田",   org:"nar", area:"chiho", straight:{dirt:213}},
+    himeji:   {name:"姫路",   org:"nar", area:"chiho", straight:{dirt:230}},
+    kochi:    {name:"高知",   org:"nar", area:"chiho", straight:{dirt:200}},
+    saga:     {name:"佐賀",   org:"nar", area:"chiho", straight:{dirt:200}}
   };
 
   const TRACK_KEYS = Object.keys(TRACKS);
   const JRA_KEYS = TRACK_KEYS.filter(k => TRACKS[k].org === "jra");
   const NAR_KEYS = TRACK_KEYS.filter(k => TRACKS[k].org === "nar");
+  const NANKAN_KEYS = TRACK_KEYS.filter(k => TRACKS[k].area === "nankan");
+  const CHIHO_KEYS  = TRACK_KEYS.filter(k => TRACKS[k].area === "chiho");
 
   const STYLES = [
     {v:"nige",   label:"逃げ"},
@@ -167,8 +182,20 @@
       return {h, parts, score, market: impl[i] / implSum};
     });
 
-    // 能力指数 → モデル勝率（softmax）
-    const T = 11;
+    /* 能力指数 → モデル勝率（softmax）
+
+       温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
+       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
+       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
+       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
+       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
+    const std = arr => {
+      const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
+      return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
+    };
+    const marketSpread = Math.max(0.6, std(rows.map(x => Math.log(x.market))));
+    const scoreSpread = std(rows.map(x => x.score));
+    const T = Math.min(14, Math.max(4, scoreSpread / marketSpread));
     const maxScore = Math.max.apply(null, rows.map(x => x.score));
     const exps = rows.map(x => Math.exp((x.score - maxScore) / T));
     const expSum = exps.reduce((a,b)=>a+b, 0);
@@ -191,6 +218,7 @@
     rows.sort((a,b) => b.prob - a.prob);
     rows.forEach((x, i) => { x.rank = i + 1; });
     rows.infoLevel = info;
+    rows.temperature = T;
     rows.marketWeight = W;
     return rows;
   }
@@ -210,7 +238,7 @@
 
     // 妙味馬（市場評価より高く評価できる馬。本命以外・オッズ4倍以上）
     const value = rows
-      .filter(x => x.h.num !== a && x.h.odds >= 4 && x.edge >= 1.15 && x.rank <= Math.min(8, rows.length))
+      .filter(x => x.h.num !== a && x.h.odds >= 4 && isValue(x) && x.rank <= Math.min(8, rows.length))
       .sort((x, y) => y.edge - x.edge)[0];
 
     const bets = [];
@@ -261,6 +289,21 @@
     return {bets: live, value, dropped};
   }
 
+  /* ---------- 妙味・過剰人気の判定 ----------
+     比率（市場比）だけで判定すると、もともと勝ち目のない馬で誤判定が出る。
+     300倍の馬の 0.25% が 0.40% になっても比率は1.6倍だが、差は0.15ポイントしかなく、
+     モデルにその精度はない。比率に加えて、勝率の絶対差も要求する。 */
+  const VALUE_EDGE = 1.20;         // 市場比がこれ以上
+  const VALUE_GAP  = 0.005;        // かつ勝率で0.5ポイント以上の上乗せ
+  const OVER_EDGE  = 0.80;
+
+  function isValue(x){
+    return x.edge >= VALUE_EDGE && (x.prob - x.market) >= VALUE_GAP;
+  }
+  function isOverbet(x){
+    return x.edge <= OVER_EDGE && (x.market - x.prob) >= VALUE_GAP;
+  }
+
   /* ---------- 総評 ---------- */
   function verdictOf(rows){
     const topProb = rows[0].prob;
@@ -296,10 +339,11 @@
   }
 
   return {
-    TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS,
+    TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS, NANKAN_KEYS, CHIHO_KEYS,
     STYLES, STYLE_LABEL, PACE_BONUS, MARKS, MARK_NAME,
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
+    isValue, isOverbet, VALUE_EDGE, VALUE_GAP, OVER_EDGE,
     MAX_FIELD: 18
   };
 });

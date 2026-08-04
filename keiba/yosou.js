@@ -133,7 +133,8 @@ Turf Logic 予想CLI
 
 競馬場一覧
   中央: ${E.JRA_KEYS.map(k => E.TRACKS[k].name).join(" ")}
-  南関: ${E.NAR_KEYS.map(k => E.TRACKS[k].name).join(" ")}
+  南関: ${E.NANKAN_KEYS.map(k => E.TRACKS[k].name).join(" ")}
+  地方: ${E.CHIHO_KEYS.map(k => E.TRACKS[k].name).join(" ")}
 `;
 
 /* ---------- 値の正規化 ---------- */
@@ -219,8 +220,9 @@ async function main(){
   if(opts.course === "outer") race.course = "outer";
   if(opts.budget)    race.budget = Number(opts.budget) || race.budget;
 
-  // 南関はダートのみ
-  if(race.track && E.TRACKS[race.track] && E.TRACKS[race.track].org === "nar") race.surface = "dirt";
+  // 芝コースを持たない競馬場はダートに固定する（地方の多くはダートのみ）
+  const tk = race.track && E.TRACKS[race.track];
+  if(tk && tk.straight.turf == null && !(tk.outer && tk.outer.turf != null)) race.surface = "dirt";
 
   // ペース：指定がなければ脚質構成から自動判定
   const auto = E.autoPace(parsed.horses);
@@ -252,7 +254,7 @@ async function main(){
   /* ---- 画面出力 ---- */
   const tName = race.track && E.TRACKS[race.track] ? E.TRACKS[race.track].name : "（競馬場不明）";
   const org = race.track && E.TRACKS[race.track]
-    ? (E.TRACKS[race.track].org === "nar" ? "南関" : "中央") : "-";
+    ? ({jra:"中央", nankan:"南関", chiho:"地方"})[E.TRACKS[race.track].area] : "-";
   const sName = race.surface === "turf" ? "芝" : "ダート";
   const cName = ["良","稍重","重","不良"][race.condition] || "良";
   const pName = {high:"ハイ", mid:"平均", slow:"スロー"}[race.pace];
@@ -293,8 +295,8 @@ async function main(){
   rows.forEach((x, i) => {
     const mark = i < E.MARKS.length ? E.MARKS[i] : String(i + 1);
     let tag = "";
-    if(x.edge >= 1.20) tag = ` ${C.red}妙味${C.r}`;
-    else if(x.edge <= 0.80) tag = ` ${C.blue}過剰人気${C.r}`;
+    if(E.isValue(x)) tag = ` ${C.red}妙味${C.r}`;
+    else if(E.isOverbet(x)) tag = ` ${C.blue}過剰人気${C.r}`;
     const line =
       `${padStart(mark,4)} ${padStart(x.h.num,4)} ${padEnd(x.h.name || "（不明）",20)} ` +
       `${padStart(x.score.toFixed(1),6)} ${padStart(x.h.odds.toFixed(1),7)} ` +

@@ -37,7 +37,8 @@ function buildTrackSelect(){
     return g;
   };
   sel.appendChild(group("中央（JRA）", E.JRA_KEYS));
-  sel.appendChild(group("南関東（NAR）", E.NAR_KEYS));
+  sel.appendChild(group("南関東", E.NANKAN_KEYS));
+  sel.appendChild(group("その他の地方", E.CHIHO_KEYS));
   sel.value = "tokyo";
 }
 
@@ -48,10 +49,12 @@ function syncTrackUI(){
   if(!t) return;
   const isNar = t.org === "nar";
 
+  // 芝コースを持たない競馬場ではダートに固定する（地方の多くはダートのみ）
+  const noTurf = t.straight.turf == null && !(t.outer && t.outer.turf != null);
   const surf = $("surface");
-  surf.querySelector('option[value="turf"]').disabled = isNar;
-  if(isNar) surf.value = "dirt";
-  surf.disabled = isNar;
+  surf.querySelector('option[value="turf"]').disabled = noTurf;
+  if(noTurf) surf.value = "dirt";
+  surf.disabled = noTurf;
 
   const hasOuter = !!(t.outer && t.outer[surf.value] != null);
   $("courseWrap").hidden = !hasOuter;
@@ -62,8 +65,8 @@ function syncTrackUI(){
               : st >= 350 ? "標準的な直線"
               : st >= 290 ? "やや小回りで先行有利"
               : "小回りで逃げ・先行が有利";
-  $("trackNote").textContent =
-    `${t.name}（${isNar ? "南関" : "中央"}）・直線${st}m — ${shape}。`;
+  const area = t.area === "jra" ? "中央" : t.area === "nankan" ? "南関" : "地方";
+  $("trackNote").textContent = `${t.name}（${area}）・直線${st}m — ${shape}。`;
 }
 
 /* ---------- レース設定の読み書き ---------- */
@@ -311,7 +314,7 @@ function run(){
   const outer = (r.course === "outer" && t && t.outer && t.outer[r.surface] != null) ? "外回り・" : "";
 
   $("resultRace").textContent =
-    `${t ? t.name : ""}${t ? (t.org === "nar" ? "（南関）" : "（中央）") : ""}・` +
+    `${t ? t.name : ""}${t ? "（" + (t.area === "jra" ? "中央" : t.area === "nankan" ? "南関" : "地方") + "）" : ""}・` +
     `${sName}${r.distance}m・${outer}${cName}・想定${pName}ペース・${hs.length}頭`;
 
   $("verdict").innerHTML =
@@ -342,8 +345,8 @@ function run(){
     const markCls = i < 4 ? "m" + Math.min(i, 3) : "";
     const width = Math.max(4, Math.round((x.score - minScore) / span * 100));
     const tags = [`<span class="tag style">${E.STYLE_LABEL[x.h.style]}</span>`];
-    if(x.edge >= 1.20) tags.push(`<span class="tag value">妙味</span>`);
-    else if(x.edge <= 0.80) tags.push(`<span class="tag over">過剰人気</span>`);
+    if(E.isValue(x)) tags.push(`<span class="tag value">妙味</span>`);
+    else if(E.isOverbet(x)) tags.push(`<span class="tag over">過剰人気</span>`);
     return `
       <div class="rank${i === 0 ? " top" : ""}">
         <div class="mark ${markCls}" title="${i < E.MARK_NAME.length ? E.MARK_NAME[i] : ""}">${mark || (i+1)}</div>

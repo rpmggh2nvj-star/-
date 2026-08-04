@@ -401,15 +401,32 @@ function parseNetkeiba(text){
       h._got.push("近走着順");
     }
 
-    // 今回の馬体重。D行の「486kg (+11)」は前走の値なので使わない。
-    // 発表済みの場合に別の行へ出るため、D行以外から探す。
-    const others = [A, B, C, E, F].filter(Boolean).map(c => c.join("\t")).join("\t");
-    const wt = others.match(/(?:^|[\s\t])(\d{3})\s*(?:kg)?\s*\(\s*([+\-]?\d{1,3})\s*\)/);
-    if(wt && Number(wt[1]) >= 300 && Number(wt[1]) <= 700){
-      h.weight = Number(wt[1]);
-      h.wdiff = Number(wt[2]);
+    /* 今回の馬体重。
+       D行に並ぶ「482kg (-6)」は過去走それぞれの馬体重であって今回の値ではない。
+       過去走の数（「9頭」の出現数）より馬体重の数が多ければ、余分な1つが
+       今回の発表値。同数なら今回の分は載っていない。
+       他の行に出る形式もあるため、そちらも探す。 */
+    const dLine = D.join("\t");
+    const pastCount = (dLine.match(/\d{1,2}頭/g) || []).length;
+    const weights = [];
+    const wre = /(\d{3})\s*kg\s*\(\s*([+\-]?\d{1,3})\s*\)/g;
+    let wm;
+    while((wm = wre.exec(dLine)) !== null) weights.push({w: Number(wm[1]), d: Number(wm[2])});
+
+    let today = null;
+    if(pastCount && weights.length > pastCount) today = weights[0];
+    if(!today){
+      const others = [A, B, C, E, F].filter(Boolean).map(c => c.join("\t")).join("\t");
+      const m2 = others.match(/(?:^|[\s\t])(\d{3})\s*(?:kg)?\s*\(\s*([+\-]?\d{1,3})\s*\)/);
+      if(m2) today = {w: Number(m2[1]), d: Number(m2[2])};
+    }
+    if(today && today.w >= 300 && today.w <= 700){
+      h.weight = today.w;
+      h.wdiff = today.d;
       h._got.push("馬体重");
     }
+    // 今回の値がなくても、前走の馬体重は参考として残す
+    if(!today && weights.length) h.prevWeight = weights[0].w;
 
     // 過去走の距離と馬場（適性の推定に使う）
     if(E){

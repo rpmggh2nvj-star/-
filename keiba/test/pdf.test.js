@@ -219,5 +219,51 @@ function polyfill(){
       [50.0, 79.9, 2.7, 4.8, 5.3, 2.3, 50.3]);
   });
 
+
+  /* ---- 門別（地方競馬・7行ブロックの別形式） ---- */
+  const mbBuf = fs.readFileSync(path.join(__dirname, "fixture-monbetsu.pdf"));
+  const mb = await PDF.pdfToText(new Uint8Array(mbBuf), globalThis.pdfjsLib);
+  const MB = P.parseRacecard(mb.text, {html:false});
+
+  console.log("\n■ 門別（ブロックの行構成が違うPDF）");
+
+  t("1頭あたりの行数が違っても7頭すべて読み取る", () => {
+    // このPDFはクラス欄が別行になっており、船橋のPDFより1行多い
+    assert.strictEqual(MB.horses.length, 7, "頭数: " + MB.horses.length);
+  });
+
+  t("馬名・オッズ・斤量・脚質・近走が正しい", () => {
+    assert.deepStrictEqual(MB.horses.map(h => h.name),
+      ["マナモアナ","ポポロン","ナイトスパイア","グレートシューター",
+       "アルマロザリオ","スウィンドル","ヨシノアヴァンセ"]);
+    assert.deepStrictEqual(MB.horses.map(h => h.odds),
+      [2.2, 43.4, 6.6, 317.4, 63.0, 2.4, 5.0]);
+    assert.deepStrictEqual(MB.horses.map(h => h.kinryo), [55, 52, 54, 57, 55, 57, 55]);
+    assert.deepStrictEqual(MB.horses.map(h => h.style),
+      ["sashi","sashi","sashi","sashi","sashi","sashi","senko"]);
+    assert.deepStrictEqual(MB.horses[0].last1, 2);
+    assert.deepStrictEqual(MB.horses[6].last1, 4);
+  });
+
+  t("地方競馬場（門別）を認識する", () => {
+    assert.strictEqual(MB.race.track, "monbetsu", "track=" + MB.race.track);
+    assert.strictEqual(E.TRACKS.monbetsu.area, "chiho");
+    assert.strictEqual(MB.race.distance, 1200);
+    assert.strictEqual(MB.race.surface, "dirt");
+  });
+
+  t("過去走の馬体重を今回の値として取り込まない", () => {
+    // D行には「482kg (-6)」など過去4走ぶんの馬体重が並ぶ。
+    // 過去走の数と同数なので、今回の発表値は載っていない。
+    assert.ok(MB.horses.every(h => h.wdiff === 0),
+      "過去走の馬体重増減を今回の値にしている: " + JSON.stringify(MB.horses.map(h=>h.wdiff)));
+  });
+
+  t("極端な人気薄に妙味を付けない", () => {
+    const rows = E.analyze(Object.assign({pace:"mid", condition:0, budget:5000}, MB.race), MB.horses);
+    const ls = rows.find(x => x.h.odds === 317.4);
+    assert.ok(!E.isValue(ls), `317倍に妙味（市場比 ${ls.edge.toFixed(2)}）`);
+  });
+
   console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");
 })().catch(e => { console.error("実行エラー:", e.message); process.exit(1); });
