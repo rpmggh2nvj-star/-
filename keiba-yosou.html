@@ -3,55 +3,134 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
 <title>Turf Logic｜競馬予想アプリ</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
-
+/* ============================================================
+   Turf Logic — トークン定義
+   配色は light / dark の両方をトークン単位で定義し、
+   コンポーネント側は必ずトークン経由で参照する。
+   ============================================================ */
 :root{
+  --sans:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic Medium","Yu Gothic","Noto Sans JP",Meiryo,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Courier New",monospace;
+
   --paper:#F2F1EA;
   --card:#FCFBF6;
+  --field:#FFFFFF;
   --ink:#22261F;
   --ink-soft:#6C7367;
   --line:#DDDDD2;
 
   --turf:#1F5C3D;
-  --turf-tint:#DFEBE2;
   --turf-deep:#123A26;
+  --turf-tint:#DFEBE2;
+  --on-turf:#FFFFFF;
 
-  --dirt:#8A6033;
-  --dirt-tint:#F0E4D6;
+  --hdr-a:#123A26;
+  --hdr-b:#1F5C3D;
+  --hdr-fg:#FFFFFF;
 
   --gold:#B98C1E;
   --gold-tint:#F6EBCC;
+  --gold-line:#E7D6A4;
+  --gold-ink:#7A5F14;
 
   --red:#B2402F;
   --red-tint:#F6DFDA;
+  --red-line:#E9C3BB;
 
   --blue:#2F5B93;
   --blue-tint:#DDE6F2;
+  --blue-line:#C3D3E8;
+
+  --chip-bg:#22261F;
+  --chip-fg:#FFFFFF;
 
   --radius:14px;
   --shadow:0 1px 2px rgba(34,38,31,.05), 0 8px 24px rgba(34,38,31,.06);
 }
 
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#161A15;
+    --card:#1E231C;
+    --field:#141811;
+    --ink:#E8EAE3;
+    --ink-soft:#9BA396;
+    --line:#333A31;
+
+    --turf:#6DB98C;
+    --turf-deep:#4E9B6E;
+    --turf-tint:#1F2E24;
+    --on-turf:#0F1A13;
+
+    --hdr-a:#10281B;
+    --hdr-b:#1A4630;
+    --hdr-fg:#E8EAE3;
+
+    --gold:#D6AC4A;
+    --gold-tint:#2E2612;
+    --gold-line:#4A3D1C;
+    --gold-ink:#D9C185;
+
+    --red:#E08872;
+    --red-tint:#3A211B;
+    --red-line:#5A2F26;
+
+    --blue:#8FB4E0;
+    --blue-tint:#1B2738;
+    --blue-line:#2C3F58;
+
+    --chip-bg:#E8EAE3;
+    --chip-fg:#161A15;
+
+    --shadow:0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.24);
+  }
+}
+
+/* 閲覧者のテーマ切替は media query より優先させる */
+:root[data-theme="light"]{
+  --paper:#F2F1EA; --card:#FCFBF6; --field:#FFFFFF;
+  --ink:#22261F; --ink-soft:#6C7367; --line:#DDDDD2;
+  --turf:#1F5C3D; --turf-deep:#123A26; --turf-tint:#DFEBE2; --on-turf:#FFFFFF;
+  --hdr-a:#123A26; --hdr-b:#1F5C3D; --hdr-fg:#FFFFFF;
+  --gold:#B98C1E; --gold-tint:#F6EBCC; --gold-line:#E7D6A4; --gold-ink:#7A5F14;
+  --red:#B2402F; --red-tint:#F6DFDA; --red-line:#E9C3BB;
+  --blue:#2F5B93; --blue-tint:#DDE6F2; --blue-line:#C3D3E8;
+  --chip-bg:#22261F; --chip-fg:#FFFFFF;
+  --shadow:0 1px 2px rgba(34,38,31,.05), 0 8px 24px rgba(34,38,31,.06);
+}
+:root[data-theme="dark"]{
+  --paper:#161A15; --card:#1E231C; --field:#141811;
+  --ink:#E8EAE3; --ink-soft:#9BA396; --line:#333A31;
+  --turf:#6DB98C; --turf-deep:#4E9B6E; --turf-tint:#1F2E24; --on-turf:#0F1A13;
+  --hdr-a:#10281B; --hdr-b:#1A4630; --hdr-fg:#E8EAE3;
+  --gold:#D6AC4A; --gold-tint:#2E2612; --gold-line:#4A3D1C; --gold-ink:#D9C185;
+  --red:#E08872; --red-tint:#3A211B; --red-line:#5A2F26;
+  --blue:#8FB4E0; --blue-tint:#1B2738; --blue-line:#2C3F58;
+  --chip-bg:#E8EAE3; --chip-fg:#161A15;
+  --shadow:0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.24);
+}
+
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
 body{
-  font-family:'Zen Kaku Gothic New',-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;
+  margin:0;
+  font-family:var(--sans);
   background:var(--paper);
   color:var(--ink);
   line-height:1.7;
   -webkit-text-size-adjust:100%;
   padding-bottom:60px;
 }
-.mono{font-family:'JetBrains Mono',monospace;font-feature-settings:"tnum";}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
 
 /* ---------- Layout ---------- */
 .wrap{max-width:1080px;margin:0 auto;padding:0 16px;}
 
 header.site{
-  background:linear-gradient(135deg,var(--turf-deep),var(--turf));
-  color:#fff;
+  background:linear-gradient(135deg,var(--hdr-a),var(--hdr-b));
+  color:var(--hdr-fg);
   padding:22px 0 20px;
   margin-bottom:22px;
   border-bottom:3px solid var(--gold);
@@ -63,7 +142,7 @@ header.site .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
   display:grid;place-items:center;
   font-size:20px;
 }
-h1{font-size:1.32rem;margin:0;font-weight:900;letter-spacing:.04em;}
+h1{font-size:1.32rem;margin:0;font-weight:800;letter-spacing:.04em;}
 .tagline{font-size:.76rem;opacity:.82;margin:0;letter-spacing:.06em;}
 
 section.panel{
@@ -79,7 +158,7 @@ section.panel{
   margin:-2px 0 14px;flex-wrap:wrap;
 }
 .panel-head h2{
-  font-size:1.02rem;margin:0;font-weight:900;letter-spacing:.03em;
+  font-size:1.02rem;margin:0;font-weight:800;letter-spacing:.03em;
   display:flex;align-items:center;gap:8px;
 }
 .panel-head h2::before{
@@ -94,74 +173,75 @@ section.panel{
 label.field{display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--ink-soft);font-weight:700;letter-spacing:.04em;}
 input,select{
   font-family:inherit;font-size:.92rem;color:var(--ink);
-  background:#fff;border:1px solid var(--line);border-radius:9px;
+  background:var(--field);border:1px solid var(--line);border-radius:9px;
   padding:8px 10px;width:100%;
   transition:border-color .15s, box-shadow .15s;
 }
+input:focus-visible,select:focus-visible,button:focus-visible{
+  outline:2px solid var(--turf);outline-offset:2px;
+}
 input:focus,select:focus{outline:none;border-color:var(--turf);box-shadow:0 0 0 3px var(--turf-tint);}
-input[type=number]{font-family:'JetBrains Mono',monospace;}
+input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;}
 
 button{
   font-family:inherit;font-weight:700;font-size:.86rem;
-  border:1px solid var(--line);background:#fff;color:var(--ink);
+  border:1px solid var(--line);background:var(--field);color:var(--ink);
   border-radius:9px;padding:8px 14px;cursor:pointer;
   transition:transform .08s, background .15s, border-color .15s;
 }
 button:hover{border-color:var(--turf);}
 button:active{transform:translateY(1px);}
-button.primary{background:var(--turf);border-color:var(--turf);color:#fff;}
-button.primary:hover{background:var(--turf-deep);}
 button.ghost{background:transparent;color:var(--ink-soft);}
-button.danger{color:var(--red);border-color:var(--red-tint);background:var(--red-tint);}
+button.danger{color:var(--red);border-color:var(--red-line);background:var(--red-tint);}
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;}
 
 .big-run{
   width:100%;font-size:1.02rem;padding:14px;letter-spacing:.1em;
-  background:var(--turf);border-color:var(--turf);color:#fff;
+  background:var(--turf);border-color:var(--turf);color:var(--on-turf);
   box-shadow:0 4px 0 var(--turf-deep);
 }
-.big-run:hover{background:var(--turf-deep);}
+.big-run:hover{background:var(--turf-deep);border-color:var(--turf-deep);}
 .big-run:active{box-shadow:0 1px 0 var(--turf-deep);transform:translateY(3px);}
 
 /* ---------- Horse cards ---------- */
 #horseList{display:grid;gap:12px;}
 .horse{
-  border:1px solid var(--line);border-radius:12px;background:#fff;
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
   padding:12px;
   display:grid;gap:10px;
 }
 .horse-top{display:flex;align-items:center;gap:8px;}
 .umaban{
   width:34px;height:34px;flex:0 0 34px;border-radius:8px;
-  display:grid;place-items:center;font-weight:900;
-  background:var(--ink);color:#fff;font-family:'JetBrains Mono',monospace;
+  display:grid;place-items:center;font-weight:800;
+  background:var(--chip-bg);color:var(--chip-fg);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
 }
 .horse-top input.name{flex:1 1 auto;font-weight:700;}
 .horse-fields{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));}
-.horse-fields .wide{grid-column:span 2;}
 .rm{flex:0 0 auto;padding:6px 10px;font-size:.78rem;}
 
 /* ---------- Results ---------- */
 #results{display:none;}
 .verdict{
   border-radius:12px;padding:12px 14px;margin-bottom:16px;
-  background:var(--gold-tint);border:1px solid #E7D6A4;
+  background:var(--gold-tint);border:1px solid var(--gold-line);
   font-size:.88rem;font-weight:700;
 }
-.verdict .sub{font-weight:400;font-size:.8rem;color:#7A5F14;display:block;margin-top:2px;}
+.verdict .sub{font-weight:400;font-size:.8rem;color:var(--gold-ink);display:block;margin-top:2px;}
 
 .rank{
   display:grid;
   grid-template-columns:38px 34px 1fr auto;
   gap:10px;align-items:center;
   padding:11px 10px;border-radius:11px;border:1px solid var(--line);
-  background:#fff;margin-bottom:8px;
+  background:var(--field);margin-bottom:8px;
 }
 .rank.top{border-color:var(--turf);background:var(--turf-tint);}
 .mark{
   width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
-  font-size:1.15rem;font-weight:900;border:2px solid var(--line);color:var(--ink-soft);
-  background:#fff;
+  font-size:1.15rem;font-weight:800;border:2px solid var(--line);color:var(--ink-soft);
+  background:var(--card);
 }
 .mark.m0{border-color:var(--red);color:var(--red);}
 .mark.m1{border-color:var(--blue);color:var(--blue);}
@@ -169,47 +249,52 @@ button.danger{color:var(--red);border-color:var(--red-tint);background:var(--red
 .mark.m3{border-color:var(--ink-soft);}
 .rank .num{
   width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
-  background:var(--ink);color:#fff;font-weight:900;font-family:'JetBrains Mono',monospace;
+  background:var(--chip-bg);color:var(--chip-fg);font-weight:800;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
 }
 .rank .body{min-width:0;}
 .rank .nm{font-weight:700;font-size:.96rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .meta{font-size:.72rem;color:var(--ink-soft);display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:5px;}
 .bar span{display:block;height:100%;background:var(--turf);border-radius:3px;}
-.stat{text-align:right;font-family:'JetBrains Mono',monospace;}
+.stat{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;}
 .stat .p{font-size:1.02rem;font-weight:700;line-height:1.2;}
 .stat .ev{font-size:.72rem;color:var(--ink-soft);}
 .tag{
   display:inline-block;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:5px;
   border:1px solid transparent;letter-spacing:.04em;
 }
-.tag.value{background:var(--red-tint);color:var(--red);border-color:#E9C3BB;}
-.tag.over{background:var(--blue-tint);color:var(--blue);border-color:#C3D3E8;}
+.tag.value{background:var(--red-tint);color:var(--red);border-color:var(--red-line);}
+.tag.over{background:var(--blue-tint);color:var(--blue);border-color:var(--blue-line);}
 .tag.style{background:var(--paper);color:var(--ink-soft);border-color:var(--line);}
 
 /* ---------- Bets ---------- */
 .bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
 .bet{
-  border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px;
+  border:1px solid var(--line);border-radius:12px;background:var(--field);padding:12px;
   display:flex;flex-direction:column;gap:6px;
 }
 .bet h3{
-  margin:0;font-size:.82rem;letter-spacing:.06em;font-weight:900;
+  margin:0;font-size:.82rem;letter-spacing:.06em;font-weight:800;
   color:var(--turf);display:flex;align-items:center;gap:6px;
 }
 .bet h3 .pts{
   margin-left:auto;font-size:.68rem;color:var(--ink-soft);font-weight:700;
   background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:0 8px;
 }
-.bet .combo{font-family:'JetBrains Mono',monospace;font-size:.86rem;font-weight:700;word-break:break-word;}
+.bet .combo{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:700;word-break:break-word;}
 .bet .money{font-size:.74rem;color:var(--ink-soft);border-top:1px dashed var(--line);padding-top:6px;margin-top:auto;}
-.bet .money b{color:var(--ink);font-family:'JetBrains Mono',monospace;}
+.bet .money b{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;}
 
 .note{
   font-size:.72rem;color:var(--ink-soft);
   border-top:1px solid var(--line);margin-top:18px;padding-top:12px;
 }
 .empty{color:var(--ink-soft);font-size:.85rem;text-align:center;padding:20px 0;}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important;}
+}
 
 @media (max-width:560px){
   h1{font-size:1.1rem;}
