@@ -16,8 +16,62 @@
 
 const fs = require("fs");
 const path = require("path");
+const url = require("url");
 const E = require("./engine.js");
 const P = require("./parse.js");
+const PDF = require("./pdftext.js");
+
+/* ---------- PDF ----------
+   同梱の pdf.js（keiba/vendor）を読み込む。末尾のexportを
+   globalThis への代入に書き換えてあるので、読み込むだけで使える。 */
+// pdf.js は読み込み時に描画用のブラウザAPIを参照する。
+// テキストを取り出すだけなので、Node では最小限の代替を置けば足りる。
+function polyfillForNode(){
+  if(typeof globalThis.DOMMatrix === "undefined"){
+    globalThis.DOMMatrix = class DOMMatrix {
+      constructor(init){
+        const m = Array.isArray(init) ? init : [1,0,0,1,0,0];
+        this.a = m[0]; this.b = m[1]; this.c = m[2];
+        this.d = m[3]; this.e = m[4]; this.f = m[5];
+      }
+      translate(x, y){
+        return new globalThis.DOMMatrix([this.a, this.b, this.c, this.d,
+                                         this.e + (x || 0), this.f + (y || 0)]);
+      }
+      scale(sx, sy){
+        const y = (sy == null) ? sx : sy;
+        return new globalThis.DOMMatrix([this.a * sx, this.b * sx,
+                                         this.c * y, this.d * y, this.e, this.f]);
+      }
+      multiply(){ return new globalThis.DOMMatrix([this.a,this.b,this.c,this.d,this.e,this.f]); }
+    };
+  }
+  if(typeof globalThis.Path2D === "undefined"){
+    globalThis.Path2D = class Path2D {};
+  }
+}
+
+async function pdfTextOf(buf){
+  polyfillForNode();
+  const load = async f => {
+    await import(url.pathToFileURL(path.join(__dirname, "vendor", f)).href);
+  };
+  // pdf.js は描画用ライブラリが無いと警告を出す。文字を取り出すだけなので黙らせる。
+  const warn = console.warn, err = console.error;
+  console.warn = console.error = () => {};
+  try{
+    await load("pdf.worker.mjs");   // 先に読むとWorkerを起こさずメインスレッドで動く
+    await load("pdf.mjs");
+  } finally {
+    console.warn = warn; console.error = err;
+  }
+  if(!globalThis.pdfjsLib) throw new Error("keiba/vendor の pdf.js を読み込めませんでした。");
+  return PDF.pdfToText(new Uint8Array(buf), globalThis.pdfjsLib);
+}
+
+function isPdf(buf){
+  return buf.length > 4 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46;
+}
 
 /* ---------- 表示 ---------- */
 const C = process.stdout.isTTY ? {
@@ -60,8 +114,10 @@ Turf Logic 予想CLI
   node keiba/yosou.js <出馬表ファイル> [オプション]
   cat racecard.txt | node keiba/yosou.js -
 
-出馬表は、ご自身がブラウザで開いた出馬表ページを保存したHTML、
-または画面からコピーしたテキストを渡してください。
+出馬表は次のいずれかを渡してください。
+  ・競馬新聞や出馬表を保存したPDF
+  ・ブラウザで開いた出馬表ページを保存したHTML
+  ・画面からコピーしたテキスト
 
 オプション
   --track <名>       競馬場（例: 東京 / 大井 / ooi）。未指定なら本文から自動判定
@@ -109,7 +165,7 @@ function resolvePace(v){
 }
 
 /* ---------- 本体 ---------- */
-function main(){
+async function main(){
   const {file, opts} = parseArgs(process.argv.slice(2));
 
   if(opts.help || (!file && process.stdin.isTTY)){
@@ -117,18 +173,32 @@ function main(){
     process.exit(file ? 0 : 1);
   }
 
-  let raw;
+  let buf;
   if(file && file !== "-"){
     if(!fs.existsSync(file)){
       console.error(`ファイルが見つかりません: ${file}`);
       process.exit(1);
     }
-    raw = fs.readFileSync(file, "utf8");
+    buf = fs.readFileSync(file);
   }else{
-    raw = fs.readFileSync(0, "utf8");
+    buf = fs.readFileSync(0);
   }
 
-  const parsed = P.parseRacecard(raw, {html: opts.text ? false : undefined});
+  let raw, pdfPages = 0;
+  if(isPdf(buf)){
+    const r = await pdfTextOf(buf);
+    raw = r.text;
+    pdfPages = r.pages;
+    if(!raw.trim()){
+      console.error("\nPDFから文字を取り出せませんでした。");
+      console.error("紙面をスキャンした画像だけのPDFの可能性があります（文字情報が入っていません）。\n");
+      process.exit(2);
+    }
+  }else{
+    raw = buf.toString("utf8");
+  }
+
+  const parsed = P.parseRacecard(raw, {html: (opts.text || pdfPages) ? false : undefined});
 
   if(!parsed.horses.length){
     console.error(`\n${C.red}出走馬を読み取れませんでした。${C.r}`);
@@ -193,6 +263,7 @@ function main(){
               `${race.course === "outer" ? "（外回り）" : ""} ・ 馬場${cName} ・ 想定${pName}ペース ・ ${rows.length}頭` +
               (race.name ? ` ・ ${race.name}` : "") +
               (race.raceNo ? ` ・ ${race.raceNo}R` : ""));
+  if(pdfPages) console.log(`${C.dim}  PDF ${pdfPages}ページから読み取り${C.r}`);
   if(!opts.pace) console.log(`${C.dim}  ペースは逃げ${auto.nige}頭・先行${auto.senko}頭から自動判定${C.r}`);
   console.log("");
   // 情報量：既定値のままの項目が多いと、モデルは市場（オッズ）に委ねる
@@ -260,4 +331,4 @@ function main(){
   console.log("");
 }
 
-main();
+main().catch(e => { console.error("\nエラー: " + (e && e.message ? e.message : e) + "\n"); process.exit(1); });

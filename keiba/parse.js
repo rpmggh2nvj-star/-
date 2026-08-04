@@ -382,8 +382,9 @@ function parseRowwise(text){
     const st = seg.match(/(?:^|[\s\t])(逃げ|先行|差し|追込|追い込み|自在|マクリ|逃|先|差|追)(?=[\s\t]|$)/);
     if(st){ h.style = STYLE_TOKEN[st[1]] || h.style; h._got.push("脚質"); }
 
-    // 近走着順（「1着」形式。左から順に前走・2走前・3走前とみなす）
-    const ch = seg.match(/\d{1,2}着/g);
+    // 近走着順（左から順に前走・2走前・3走前とみなす）
+    // 中止・取消も1走として数える。飛ばすと着順が1つずつ前にずれてしまう。
+    const ch = seg.match(/\d{1,2}着|中止|取消|除外|失格/g);
     if(ch && ch.length){
       ch.slice(0, 3).forEach((v, i) => { h["last" + (i+1)] = chakuValue(v); });
       h._got.push("近走着順");

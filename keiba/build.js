@@ -21,6 +21,7 @@ const read = p => fs.readFileSync(path.join(__dirname, p), "utf8");
 
 const engine = read("engine.js");
 const parser = read("parse.js");
+const pdftext = read("pdftext.js");
 const style  = read("ui/style.html");
 const body   = read("ui/body.html");
 const app    = read("ui/app.js");
@@ -28,10 +29,17 @@ const app    = read("ui/app.js");
 const banner = "/* このファイルは keiba/build.js が生成します。直接編集せず、" +
                "keiba/engine.js と keiba/ui/* を編集してください。 */";
 
-const script = `<script>\n${banner}\n${engine}\n${parser}\n${app}\n</script>`;
+const script = `<script>\n${banner}\n${engine}\n${parser}\n${pdftext}\n${app}\n</script>`;
+
+// pdf.js は ESM のため type="module" で読み込む。
+// worker を先に読ませて globalThis.pdfjsWorker を立てると、pdf.js は
+// Worker を起こさずメインスレッドで動く（CSPが Worker と blob: を許可しないため）。
+const pdfjs =
+  `<script type="module">${read("vendor/pdf.worker.mjs")}</script>\n` +
+  `<script type="module">${read("vendor/pdf.mjs")}</script>`;
 
 // アーティファクト用：<!doctype> や <head> は公開時に付与されるため持たせない
-const artifact = style + body + "\n" + script + "\n";
+const artifact = style + body + "\n" + pdfjs + "\n" + script + "\n";
 
 // 単体版：そのままブラウザで開ける完全なHTML
 const standalone =
@@ -46,6 +54,7 @@ ${style}
 </head>
 <body>
 ${body}
+${pdfjs}
 ${script}
 </body>
 </html>

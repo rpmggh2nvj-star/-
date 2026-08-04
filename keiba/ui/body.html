@@ -27,8 +27,21 @@
 
     <div class="import" id="importBox" hidden>
       <div class="tabs" role="tablist">
-        <button type="button" class="tab on" data-tab="paste" role="tab">出馬表を貼り付け</button>
-        <button type="button" class="tab" data-tab="json" role="tab">JSONから読込</button>
+        <button type="button" class="tab on" data-tab="paste" role="tab">貼り付け</button>
+        <button type="button" class="tab" data-tab="pdf" role="tab">PDF</button>
+        <button type="button" class="tab" data-tab="json" role="tab">JSON</button>
+      </div>
+
+      <div id="tabPdf" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          競馬新聞や出馬表を保存したPDFを選ぶと、中の文字を読み取って自動入力します。
+          複数ページのPDFにも対応します。
+        </p>
+        <input type="file" id="pdfFile" accept=".pdf,application/pdf">
+        <p class="hint" id="pdfStatus" style="margin:0"></p>
+        <div class="btn-row">
+          <button type="button" class="ghost" id="btnImportClose3">閉じる</button>
+        </div>
       </div>
 
       <div id="tabPaste">

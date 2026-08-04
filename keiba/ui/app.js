@@ -333,7 +333,7 @@ function showResult(ok, title, lines){
 }
 
 /* ---------- 出馬表の貼り付け読み取り ---------- */
-function importPaste(text){
+function importPaste(text, sourceLabel){
   if(!text.trim()){
     showResult(false, "出馬表を貼り付けてください。", []);
     return;
@@ -376,9 +376,47 @@ function importPaste(text){
                "取れない場合は下の一覧に手で入れてください（この2つが予想の精度を大きく左右します）。");
   }
 
-  showResult(true, `${n}頭を読み取りました。`, lines);
+  showResult(true, `${sourceLabel || ""}${n}頭を読み取りました。`, lines);
   $("pasteText").value = "";
   setTimeout(() => $("horseList").scrollIntoView({behavior:"smooth", block:"start"}), 200);
+}
+
+/* ---------- PDF読込 ---------- */
+async function importPdf(file){
+  const status = $("pdfStatus");
+  const lib = window.pdfjsLib;
+  if(!lib){
+    showResult(false, "PDFの読み取り機能を読み込めませんでした。", [
+      "ページを再読み込みしてから、もう一度お試しください。"
+    ]);
+    return;
+  }
+  status.textContent = `${file.name} を読み取っています…`;
+  $("importResult").hidden = true;
+
+  try{
+    const buf = await file.arrayBuffer();
+    const r = await TurfPdf.pdfToText(new Uint8Array(buf), lib, (i, n) => {
+      status.textContent = `${file.name} を読み取っています… ${i}/${n}ページ`;
+    });
+    status.textContent = `${file.name}（${r.pages}ページ）を読み取りました。`;
+
+    if(!r.text.trim()){
+      showResult(false, "PDFから文字を取り出せませんでした。", [
+        "紙面をスキャンした画像だけのPDFの可能性があります。この場合、文字情報が入っていないため読み取れません。",
+        "文字を選択できるPDFかどうか、PDFビューアで確認してください。",
+        "画像しかない場合は、出馬表のページから文字をコピーして「貼り付け」タブをお使いください。"
+      ]);
+      return;
+    }
+    importPaste(r.text, `PDF（${r.pages}ページ）から`);
+  }catch(e){
+    status.textContent = "";
+    showResult(false, "PDFを読めませんでした。", [
+      e && e.message ? e.message : String(e),
+      "パスワードで保護されたPDFや、壊れたファイルの可能性があります。"
+    ]);
+  }
 }
 
 /* ---------- JSON読込（CLIの出力） ---------- */
@@ -445,6 +483,7 @@ $("btnImport").addEventListener("click", () => {
 const closeImport = () => { $("importBox").hidden = true; };
 $("btnImportClose").addEventListener("click", closeImport);
 $("btnImportClose2").addEventListener("click", closeImport);
+$("btnImportClose3").addEventListener("click", closeImport);
 
 // タブ切替
 document.querySelectorAll(".tab").forEach(btn => {
@@ -452,12 +491,18 @@ document.querySelectorAll(".tab").forEach(btn => {
     const on = btn.dataset.tab;
     document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b === btn));
     $("tabPaste").hidden = on !== "paste";
+    $("tabPdf").hidden   = on !== "pdf";
     $("tabJson").hidden  = on !== "json";
     $("importResult").hidden = true;
   });
 });
 
 $("btnPasteRun").addEventListener("click", () => importPaste($("pasteText").value));
+$("pdfFile").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if(f) importPdf(f);
+});
 $("btnImportRun").addEventListener("click", () => {
   const txt = $("importText").value.trim();
   if(!txt){ showResult(false, "JSONを貼り付けるか、ファイルを選んでください。", []); return; }
