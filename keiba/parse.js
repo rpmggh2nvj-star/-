@@ -73,8 +73,9 @@ function detectRace(text){
     }
   }
 
-  // 距離
-  const dist = t.match(/(\d{3,4})\s*(?:m|メートル)/i);
+  // 距離（「ダート1600m」「ダ1600」「芝1200」いずれの書き方でも拾う）
+  const dist = t.match(/(\d{3,4})\s*(?:m|メートル)/i)
+            || t.match(/(?:芝|ダート|ダ)\s*(\d{3,4})(?!\d)/);
   if(dist) out.distance = Number(dist[1]);
 
   // コース種別（南関はダートのみ）
@@ -87,8 +88,9 @@ function detectRace(text){
   }
 
   // 馬場状態（「馬場」「馬場状態」の近くを優先して見る）
-  const condNear = t.match(/馬場(?:状態)?\s*[:：]?\s*(不良|稍重|稍|重|良)/);
-  const cond = condNear || t.match(/(?:^|\s)(不良|稍重|良)(?:\s|$)/m);
+  const cond = t.match(/馬場(?:状態)?\s*[:：]?\s*(不良|稍重|稍|重|良)/)
+            || t.match(/(不良|稍重|重|良)\s*馬場/)
+            || t.match(/(?:^|\s)(不良|稍重|良)(?:\s|$)/m);
   if(cond) out.condition = COND_MAP[cond[1]];
 
   // レース番号
@@ -115,6 +117,22 @@ const NOT_A_NAME = new Set([
 
 const NAME_RE = /[ァ-ヴ][ァ-ヴー]{2,8}/g;
 const NAME_ONE = /^[ァ-ヴ][ァ-ヴー]{2,8}$/;
+
+// 脚質の表記ゆれ。サイトによって1文字だったり語だったりする。
+const STYLE_TOKEN = {
+  "逃":"nige", "逃げ":"nige",
+  "先":"senko", "先行":"senko", "自在":"senko",
+  "差":"sashi", "差し":"sashi", "マクリ":"sashi", "捲り":"sashi",
+  "追":"oikomi", "追込":"oikomi", "追い込み":"oikomi"
+};
+const STYLE_RE_ONE = /^(?:逃げ|先行|差し|追込|追い込み|自在|マクリ|捲り|逃|先|差|追)$/;
+
+// 着順の表記。取消・中止などは「出走なし（0）」として扱う。
+const CHAKU_RE_ONE = /^(?:\d{1,2}着|中止|取消|除外|失格|再審|[-－―])$/;
+function chakuValue(s){
+  const m = String(s).match(/^(\d{1,2})着$/);
+  return m ? Number(m[1]) : 0;
+}
 
 // 「480 (+2)」「牝 5」のように離れて並ぶことがあるので、先につなげておく
 function glue(t){
@@ -176,6 +194,15 @@ function parseColumnar(t){
     const ns = v.map(Number).slice().sort((a,b) => a-b);
     return ns.every((x,k) => x === k + 1);
   });
+  // 脚質の列（載っているサイトのみ）
+  const style  = take(s => STYLE_RE_ONE.test(s));
+  // 近走着順の列。左から順に前走・2走前・3走前とみなす。
+  const chaku = [];
+  for(let i=0;i<3;i++){
+    const b = take(s => CHAKU_RE_ONE.test(s));
+    if(!b) break;
+    chaku.push(b);
+  }
 
   const warnings = [];
   const horses = names.map((nm, k) => {
@@ -198,6 +225,11 @@ function parseColumnar(t){
       h._got.push("性齢");
     }
     if(ninki){ h.pop = Number(ninki[k]); h._got.push("人気"); }
+    if(style){ h.style = STYLE_TOKEN[style[k]] || h.style; h._got.push("脚質"); }
+    if(chaku.length){
+      chaku.forEach((col, i) => { h["last" + (i+1)] = chakuValue(col[k]); });
+      h._got.push("近走着順");
+    }
     return h;
   });
 
@@ -345,6 +377,17 @@ function parseRowwise(text){
     // 人気
     const pop = seg.match(/(\d{1,2})\s*番?人気/);
     if(pop){ h.pop = Number(pop[1]); h._got.push("人気"); }
+
+    // 脚質（載っているサイトのみ。厩舎名などに紛れないよう単独の語に限る）
+    const st = seg.match(/(?:^|[\s\t])(逃げ|先行|差し|追込|追い込み|自在|マクリ|逃|先|差|追)(?=[\s\t]|$)/);
+    if(st){ h.style = STYLE_TOKEN[st[1]] || h.style; h._got.push("脚質"); }
+
+    // 近走着順（「1着」形式。左から順に前走・2走前・3走前とみなす）
+    const ch = seg.match(/\d{1,2}着/g);
+    if(ch && ch.length){
+      ch.slice(0, 3).forEach((v, i) => { h["last" + (i+1)] = chakuValue(v); });
+      h._got.push("近走着順");
+    }
 
     horses.push(h);
   });

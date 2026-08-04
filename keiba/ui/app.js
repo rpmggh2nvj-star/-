@@ -352,6 +352,9 @@ function importPaste(text){
   const n = r.horses.length;
   const got = key => r.horses.filter(h => (h._got || []).indexOf(key) >= 0).length;
   const lines = [`オッズ ${got("オッズ")}/${n}頭 ・ 斤量 ${got("斤量")}/${n}頭 ・ 馬体重 ${got("馬体重")}/${n}頭`];
+  if(got("近走着順") || got("脚質")){
+    lines.push(`近走着順 ${got("近走着順")}/${n}頭 ・ 脚質 ${got("脚質")}/${n}頭`);
+  }
 
   const t = r.race && r.race.track && E.TRACKS[r.race.track];
   const missing = [];
@@ -368,7 +371,10 @@ function importPaste(text){
     if(/読み取れなかった項目/.test(w) || /近走着順/.test(w)) return;
     lines.push(w);
   });
-  lines.push("近走着順と脚質は出馬表から決められません。下の一覧に入力すると予想の精度が上がります。");
+  if(!got("近走着順") || !got("脚質")){
+    lines.push("近走着順・脚質が取れていません。出馬表の「成績」や「馬柱」の表示に切り替えてコピーすると読み取れる場合があります。" +
+               "取れない場合は下の一覧に手で入れてください（この2つが予想の精度を大きく左右します）。");
+  }
 
   showResult(true, `${n}頭を読み取りました。`, lines);
   $("pasteText").value = "";

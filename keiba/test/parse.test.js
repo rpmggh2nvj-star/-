@@ -234,4 +234,74 @@ t("行方向の出馬表は今までどおり行として読む（誤判定し�
     "行方向なのに列として読んでいる");
 });
 
+
+console.log("\n■ 脚質・近走着順・距離/馬場の追加読み取り");
+
+const COL_FULL = [
+  "船橋 ダ1600 良馬場",
+  "馬名","アイウエオカ","カキクケコサ","サシスセソタ","タチツテトナ",
+  "斤量","54.0","55.0","56.0","54.0",
+  "脚質","逃","先","差","追",
+  "前走","1着","5着","3着","中止",
+  "2走前","2着","4着","1着","7着",
+  "3走前","3着","6着","2着","取消",
+  "オッズ","2.4","15.7","6.3","33.0",
+  "人気","1","3","2","4"
+].join("\n");
+const CF = P.parseRacecard(COL_FULL);
+
+t("列方向：脚質の列を読み取る", () => {
+  assert.deepStrictEqual(CF.horses.map(h => h.style),
+    ["nige","senko","sashi","oikomi"]);
+});
+
+t("列方向：近走着順を前走・2走前・3走前に割り当てる", () => {
+  assert.deepStrictEqual(CF.horses.map(h => [h.last1,h.last2,h.last3]),
+    [[1,2,3],[5,4,6],[3,1,2],[0,7,0]]);
+});
+
+t("中止・取消は出走なし（0）として扱う", () => {
+  const h4 = CF.horses[3];
+  assert.strictEqual(h4.last1, 0, "中止が0でない: " + h4.last1);
+  assert.strictEqual(h4.last3, 0, "取消が0でない: " + h4.last3);
+});
+
+t("「ダ1600」「良馬場」の書き方でも距離・馬場を取れる", () => {
+  assert.strictEqual(CF.race.distance, 1600, "distance=" + CF.race.distance);
+  assert.strictEqual(CF.race.condition, 0, "condition=" + CF.race.condition);
+});
+
+t("近走・脚質が入ると情報量が上がり、モデルの評価が効く", () => {
+  const E = require("../engine.js");
+  const race = Object.assign({surface:"dirt",distance:1600,condition:0,pace:"mid",budget:5000}, CF.race);
+  const rows = E.analyze(race, CF.horses);
+  assert.ok(rows.infoLevel > 0.6, "情報量が上がっていない: " + rows.infoLevel);
+  assert.ok(rows.some(x => Math.abs(x.edge - 1) > 0.05), "市場比が動いていない");
+});
+
+const ROW_FULL = [
+  "大井 ダート1400m 稍重馬場",
+  "1 アイウエオカ 牡4 逃げ 2.4 56.0 480(+2) 1着 2着 3着",
+  "2 カキクケコサ 牝5 差し 15.7 54.0 462(-6) 5着 4着 6着",
+  "3 サシスセソタ 牡6 追込 6.3 57.0 500(0) 3着 1着 2着"
+].join("\n");
+const RF = P.parseRacecard(ROW_FULL);
+
+t("行方向でも脚質・近走着順を読み取る", () => {
+  assert.strictEqual(RF.horses.length, 3);
+  assert.deepStrictEqual(RF.horses.map(h => h.style), ["nige","sashi","oikomi"]);
+  assert.deepStrictEqual(RF.horses.map(h => [h.last1,h.last2,h.last3]),
+    [[1,2,3],[5,4,6],[3,1,2]]);
+  assert.deepStrictEqual(RF.horses.map(h => h.odds), [2.4, 15.7, 6.3]);
+  assert.deepStrictEqual(RF.horses.map(h => h.kinryo), [56, 54, 57]);
+  assert.strictEqual(RF.race.distance, 1400);
+  assert.strictEqual(RF.race.condition, 1);
+});
+
+t("脚質が載っていない出馬表では既定値のままにする（誤検出しない）", () => {
+  // 船橋の実データには脚質・近走の列がない
+  assert.ok(CO.horses.every(h => h.style === "senko"), "脚質を誤検出している");
+  assert.ok(CO.horses.every(h => h.last1 === 0), "近走を誤検出している");
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");
