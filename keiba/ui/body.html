@@ -1,0 +1,123 @@
+
+<header class="site">
+  <div class="wrap">
+    <div class="logo">🏇</div>
+    <div>
+      <h1>Turf Logic</h1>
+      <p class="tagline">競馬予想アプリ ／ 中央・南関対応 ／ 指数化・勝率推定・買い目提案</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- レース設定 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>レース設定</h2>
+      <div class="spacer"></div>
+      <div class="btn-row">
+        <button type="button" class="ghost" id="btnImport">JSON読込</button>
+        <button type="button" class="ghost" id="btnSample">サンプル読込</button>
+        <button type="button" class="ghost" id="btnSave">保存</button>
+        <button type="button" class="ghost" id="btnLoad">呼出</button>
+        <button type="button" class="ghost" id="btnClear">全消去</button>
+      </div>
+    </div>
+
+    <div class="import" id="importBox" hidden>
+      <p class="hint" style="margin:0 0 8px">
+        CLI（<span class="mono">node keiba/yosou.js 出馬表.html --out race.json</span>）が書き出したJSONを読み込みます。
+        ファイルを選ぶか、内容を貼り付けてください。
+      </p>
+      <input type="file" id="importFile" accept=".json,application/json">
+      <textarea id="importText" rows="4" placeholder='{"race":{...},"horses":[...]}'></textarea>
+      <div class="btn-row">
+        <button type="button" class="primary" id="btnImportRun">読み込む</button>
+        <button type="button" class="ghost" id="btnImportClose">閉じる</button>
+      </div>
+    </div>
+
+    <div class="grid race-grid">
+      <label class="field">競馬場
+        <select id="track"></select>
+      </label>
+      <label class="field">コース
+        <select id="surface">
+          <option value="turf">芝</option>
+          <option value="dirt">ダート</option>
+        </select>
+      </label>
+      <label class="field" id="courseWrap" hidden>回り
+        <select id="course">
+          <option value="inner">内回り</option>
+          <option value="outer">外回り</option>
+        </select>
+      </label>
+      <label class="field">距離 (m)
+        <input type="number" id="distance" value="1800" min="800" max="4000" step="100">
+      </label>
+      <label class="field">馬場状態
+        <select id="condition">
+          <option value="0">良</option>
+          <option value="1">稍重</option>
+          <option value="2">重</option>
+          <option value="3">不良</option>
+        </select>
+      </label>
+      <label class="field">想定ペース
+        <select id="pace">
+          <option value="high">ハイ</option>
+          <option value="mid" selected>平均</option>
+          <option value="slow">スロー</option>
+        </select>
+      </label>
+      <label class="field">予算 (円)
+        <input type="number" id="budget" value="5000" min="100" step="500">
+      </label>
+    </div>
+    <p class="hint" style="margin:10px 0 0">
+      <span id="trackNote"></span>
+      <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
+    </p>
+  </section>
+
+  <!-- 出走馬 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>出走馬</h2>
+      <span class="hint" id="countLabel">0頭</span>
+      <div class="spacer"></div>
+      <div class="btn-row">
+        <button type="button" id="btnAdd">＋ 1頭追加</button>
+        <button type="button" class="ghost" id="btnAdd5">＋ 5頭</button>
+      </div>
+    </div>
+    <div id="horseList"></div>
+    <p class="empty" id="emptyMsg">出走馬を追加してください。「サンプル読込」でも試せます。</p>
+  </section>
+
+  <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
+
+  <!-- 結果 -->
+  <section class="panel" id="results" style="margin-top:20px">
+    <div class="panel-head"><h2>予想結果</h2><span class="hint" id="resultRace"></span></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="info-note" id="infoNote" hidden></div>
+    <div id="rankList"></div>
+    <p class="hint" style="margin:10px 2px 0">
+      <b>指数</b>＝オッズを除いた能力評価。<b>推定勝率</b>＝指数にオッズ（市場評価）を加味した最終予想。
+      <b>市場比</b>が 1.00 を超える馬は、人気以上に評価できる＝妙味のある馬です。
+    </p>
+
+    <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
+    <div class="bets" id="betList"></div>
+    <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
+
+    <p class="note">
+      本アプリの指数・推定勝率は、入力値をもとにした簡易モデルによる計算結果です。
+      実際の的中を保証するものではありません。馬券の購入は自己責任・余裕資金の範囲で行ってください（20歳未満は購入できません）。
+    </p>
+  </section>
+
+</div>
