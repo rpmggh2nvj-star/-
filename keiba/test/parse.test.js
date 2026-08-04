@@ -173,4 +173,65 @@ t("既定値が入っているので、そのまま予想にかけられる", ()
   assert.ok(Math.abs(sum-1) < 1e-9, "確率の合計が " + sum);
 });
 
+
+console.log("\n■ 列方向コピー（スマホで実際にコピーした出馬表）");
+
+// 実際に船橋の出馬表をスマホでコピーしたもの。行ではなく列単位で並ぶ。
+const COL = require("fs").readFileSync(__dirname + "/fixture-funabashi.txt", "utf8");
+const CO = P.parseRacecard(COL);
+
+t("行ベースでは読めない形でも7頭すべて読み取れる", () => {
+  assert.strictEqual(CO.horses.length, 7, "頭数: " + CO.horses.length);
+});
+
+t("馬名が正しい順で並ぶ", () => {
+  assert.deepStrictEqual(CO.horses.map(h => h.name),
+    ["タケデンプリンセス","アマゴ","マッドリボンガール","ミュージシエンヌ",
+     "フェアリーランド","エンドステージ","カナーリオ"]);
+});
+
+t("オッズ・斤量・性齢・人気が各馬に正しく対応する", () => {
+  assert.deepStrictEqual(CO.horses.map(h => h.odds),
+    [50.0, 79.9, 2.7, 4.8, 5.3, 2.3, 50.3]);
+  assert.deepStrictEqual(CO.horses.map(h => h.kinryo),
+    [54, 54, 51, 54, 52, 56, 54]);
+  assert.deepStrictEqual(CO.horses.map(h => h.sex + h.age),
+    ["牝5","牝7","牝5","牝4","牝7","セ8","牝5"]);
+  assert.deepStrictEqual(CO.horses.map(h => h.pop), [5, 7, 2, 3, 4, 1, 6]);
+});
+
+t("厩舎欄に他場名があっても競馬場は船橋になる", () => {
+  assert.strictEqual(CO.race.track, "funabashi", "track=" + CO.race.track);
+});
+
+t("列ずれの検算が通る（人気とオッズの順位が一致）", () => {
+  assert.ok(!CO.warnings.some(w => /一致しません/.test(w)),
+    "列ずれの警告が出ている: " + CO.warnings.filter(w => /一致しません/.test(w)));
+});
+
+t("列がずれていれば検算で気づける", () => {
+  // 人気の先頭2つを入れ替えた入力を作り、警告が出ることを確認する。
+  // 昇順にすると馬番の列とみなされてしまうため、順列のまま入れ替える。
+  const cut = COL.lastIndexOf("50.3") + 4;
+  const broken = COL.slice(0, cut) + "\n\n7\n\n5\n\n2\n\n3\n\n4\n\n1\n\n6\n";
+  const r = P.parseRacecard(broken);
+  assert.strictEqual(r.horses.length, 7, "頭数が変わっている: " + r.horses.length);
+  assert.deepStrictEqual(r.horses.map(h => h.pop), [7,5,2,3,4,1,6], "人気の入れ替えが反映されていない");
+  assert.ok(r.warnings.some(w => /一致しません/.test(w)),
+    "列ずれを検出できていない: " + JSON.stringify(r.warnings));
+});
+
+t("馬番の列がないので並び順で1〜7が振られ、その旨を報告する", () => {
+  assert.deepStrictEqual(CO.horses.map(h => h.num), [1,2,3,4,5,6,7]);
+  assert.ok(CO.warnings.some(w => /馬番の列が見つからなかった/.test(w)),
+    "馬番を推定した旨の警告がない");
+});
+
+t("行方向の出馬表は今までどおり行として読む（誤判定しない）", () => {
+  assert.strictEqual(P.parseRacecard(TEXT_JRA).horses.length, 8);
+  assert.strictEqual(P.parseRacecard(TEXT_NAR).horses.length, 5);
+  assert.ok(!P.parseRacecard(TEXT_JRA).warnings.some(w => /列ごとに/.test(w)),
+    "行方向なのに列として読んでいる");
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

@@ -114,9 +114,144 @@ const NOT_A_NAME = new Set([
 ]);
 
 const NAME_RE = /[ァ-ヴ][ァ-ヴー]{2,8}/g;
+const NAME_ONE = /^[ァ-ヴ][ァ-ヴー]{2,8}$/;
 
+// 「480 (+2)」「牝 5」のように離れて並ぶことがあるので、先につなげておく
+function glue(t){
+  return t
+    .replace(/(\d{3})\s*\(\s*([+\-]?\d{1,3}|前計不|計不)\s*\)/g, "$1($2)")
+    .replace(/(牡|牝|セン|セ|騸)\s+(\d{1,2})/g, "$1$2");
+}
+
+/* ---------- 列方向コピーの解析 ----------
+   スマホで出馬表をコピーすると、行ではなく列単位で並ぶことがある
+   （馬名が7つ続いた後に斤量が7つ続く、など）。この形は行ベースでは
+   読めないため、「同じ条件を満たす値がN個連続するブロック＝1列」
+   として取り出す。 */
+function parseColumnar(t){
+  const tok = glue(t).split(/\s+/).filter(Boolean);
+  const isName = s => NAME_ONE.test(s) && !NOT_A_NAME.has(s);
+
+  // 最長の「馬名が連続するブロック」を探す。その長さが頭数になる。
+  let best = {start:-1, len:0};
+  for(let i=0;i<tok.length;){
+    if(!isName(tok[i])){ i++; continue; }
+    let j = i;
+    while(j < tok.length && isName(tok[j])) j++;
+    if(j - i > best.len) best = {start:i, len:j - i};
+    i = j;
+  }
+  if(best.len < 2) return null;
+
+  const N = best.len;
+  const names = tok.slice(best.start, best.start + N);
+  const used = new Array(tok.length).fill(false);
+  for(let k=best.start;k<best.start+N;k++) used[k] = true;
+
+  // 未使用のトークンからN個連続するブロックを探して確保する
+  function take(test, extra){
+    for(let s=0; s + N <= tok.length; s++){
+      let ok = true;
+      for(let k=0;k<N;k++){
+        if(used[s+k] || !test(tok[s+k])){ ok = false; break; }
+      }
+      if(!ok) continue;
+      const vals = tok.slice(s, s + N);
+      if(extra && !extra(vals)) continue;
+      for(let k=0;k<N;k++) used[s+k] = true;
+      return vals;
+    }
+    return null;
+  }
+
+  // 数値域の狭いものから確保して、取り違えを防ぐ
+  const kinryo = take(s => /^(?:4[7-9]|5\d|6[0-3])(?:\.[05])?$/.test(s));
+  const weight = take(s => /^\d{3}\((?:[+\-]?\d{1,3}|前計不|計不)\)$/.test(s));
+  const sexAge = take(s => /^(?:牡|牝|セン|セ|騸)\d{1,2}$/.test(s));
+  // 馬番は昇順に並ぶ列。人気（順不同）と区別するためここで確保する
+  const umaban = take(s => /^\d{1,2}$/.test(s),
+    v => Number(v[0]) >= 1 && v.every((x,k) => Number(x) === Number(v[0]) + k));
+  const odds   = take(s => /^\d{1,4}\.\d$/.test(s), v => v.every(x => Number(x) >= 1));
+  const ninki  = take(s => /^\d{1,2}$/.test(s), v => {
+    const ns = v.map(Number).slice().sort((a,b) => a-b);
+    return ns.every((x,k) => x === k + 1);
+  });
+
+  const warnings = [];
+  const horses = names.map((nm, k) => {
+    const num = umaban ? Number(umaban[k]) : k + 1;
+    const h = ENGINE ? ENGINE.defaultHorse(num) : {num: num};
+    h.name = nm;
+    h._got = [];
+    if(kinryo){ h.kinryo = Number(kinryo[k]); h._got.push("斤量"); }
+    if(odds){   h.odds   = Number(odds[k]);   h._got.push("オッズ"); }
+    if(weight){
+      const m = weight[k].match(/^(\d{3})\((.+)\)$/);
+      h.weight = Number(m[1]);
+      h.wdiff = /不/.test(m[2]) ? 0 : Number(m[2]);
+      h._got.push("馬体重");
+    }
+    if(sexAge){
+      const m = sexAge[k].match(/^(牡|牝|セン|セ|騸)(\d{1,2})$/);
+      h.sex = m[1] === "騸" ? "セ" : (m[1] === "セン" ? "セ" : m[1]);
+      h.age = Number(m[2]);
+      h._got.push("性齢");
+    }
+    if(ninki){ h.pop = Number(ninki[k]); h._got.push("人気"); }
+    return h;
+  });
+
+  warnings.push("列ごとに並んだ出馬表として読み取りました。");
+  if(!umaban){
+    warnings.push("馬番の列が見つからなかったため、馬名の並び順で1番から振りました。実際の馬番と違う場合は修正してください。");
+  }
+
+  // 列の対応がずれていないかの検算。
+  // 位置で対応づける以上、列がずれても値としては成立してしまう。
+  // 人気とオッズが両方取れていれば、両者の順位が一致するはずなので照合する。
+  if(ninki && odds){
+    const rank = horses.slice()
+      .sort((a,b) => a.odds - b.odds)
+      .map((h,i) => ({num:h.num, r:i+1}));
+    const bad = rank.filter(x => {
+      const h = horses.find(y => y.num === x.num);
+      return h.pop !== x.r;
+    });
+    if(bad.length){
+      warnings.push(`人気とオッズの順位が一致しません（${bad.length}頭）。列の対応がずれている可能性があるため、読み取り結果を確認してください。`);
+    }
+  }
+  return {horses, warnings, columnar: true};
+}
+
+// 行方向・列方向の両方で試して、より多く読めた方を採用する
 function parseHorses(text){
-  const t = normalize(text);
+  const row = parseRowwise(text);
+  const col = parseColumnar(normalize(text));
+  if(col && col.horses.length > row.horses.length){
+    return {horses: col.horses, warnings: col.warnings.concat(summarize(col.horses))};
+  }
+  return row;
+}
+
+// 取得状況の要約（どちらの解析でも共通）
+function summarize(horses){
+  const out = [];
+  const n = horses.length;
+  const gotCount = key => horses.filter(h => (h._got || []).indexOf(key) >= 0).length;
+  const missing = [];
+  ["オッズ", "斤量", "馬体重"].forEach(k => {
+    const g = gotCount(k);
+    if(g === 0) missing.push(`${k}（0/${n}頭）`);
+    else if(g < n) missing.push(`${k}（${g}/${n}頭のみ）`);
+  });
+  if(missing.length) out.push("読み取れなかった項目があります: " + missing.join("、"));
+  out.push("近走着順・騎手評価・調教評価・距離/馬場適性・脚質は出馬表から一意に決められないため、既定値のままです。予想前に調整してください。");
+  return out;
+}
+
+function parseRowwise(text){
+  const t = glue(normalize(text));
   const warnings = [];
 
   // 1) 馬名候補をすべて拾う
@@ -215,20 +350,7 @@ function parseHorses(text){
   });
 
   horses.sort((a, b) => a.num - b.num);
-
-  // 4) 取得状況の要約
-  const total = horses.length;
-  const gotCount = key => horses.filter(h => h._got.indexOf(key) >= 0).length;
-  const missing = [];
-  ["オッズ", "斤量", "馬体重"].forEach(k => {
-    const g = gotCount(k);
-    if(g === 0) missing.push(`${k}（0/${total}頭）`);
-    else if(g < total) missing.push(`${k}（${g}/${total}頭のみ）`);
-  });
-  if(missing.length) warnings.push("読み取れなかった項目があります: " + missing.join("、"));
-  warnings.push("近走着順・騎手評価・調教評価・距離/馬場適性・脚質は出馬表から一意に決められないため、既定値のままです。予想前に調整してください。");
-
-  return {horses, warnings};
+  return {horses, warnings: warnings.concat(summarize(horses))};
 }
 
 /* ---------- まとめ ---------- */

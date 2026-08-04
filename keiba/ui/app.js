@@ -352,9 +352,22 @@ function importPaste(text){
   const n = r.horses.length;
   const got = key => r.horses.filter(h => (h._got || []).indexOf(key) >= 0).length;
   const lines = [`オッズ ${got("オッズ")}/${n}頭 ・ 斤量 ${got("斤量")}/${n}頭 ・ 馬体重 ${got("馬体重")}/${n}頭`];
+
   const t = r.race && r.race.track && E.TRACKS[r.race.track];
+  const missing = [];
+  if(!t) missing.push("競馬場");
+  if(!r.race || r.race.distance == null) missing.push("距離");
+  if(!r.race || r.race.condition == null) missing.push("馬場状態");
   if(t) lines.push(`レース条件: ${t.name}${r.race.distance ? " " + r.race.distance + "m" : ""}` +
                    `${r.race.condition != null ? " 馬場" + (["良","稍重","重","不良"][r.race.condition]) : ""}`);
+  if(missing.length) lines.push(`${missing.join("・")}は読み取れませんでした。上の欄で設定してください。`);
+
+  // パーサーからの注意（馬番を推定した／列がずれている可能性など）は必ず出す。
+  // 件数の要約と重複する2件だけ、ここでは省く。
+  (r.warnings || []).forEach(w => {
+    if(/読み取れなかった項目/.test(w) || /近走着順/.test(w)) return;
+    lines.push(w);
+  });
   lines.push("近走着順と脚質は出馬表から決められません。下の一覧に入力すると予想の精度が上がります。");
 
   showResult(true, `${n}頭を読み取りました。`, lines);
