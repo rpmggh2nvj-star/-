@@ -143,6 +143,34 @@
       同じ騎手が乗る複数の馬にまとめて反映されます。
     </p>
     <div id="jockeyList"></div>
+    <details class="guide">
+      <summary>評価の目安</summary>
+      <table class="guide-table" id="gradeGuide"></table>
+      <p class="hint" style="margin:8px 0 0">
+        記録した結果から各騎手の成績を集計し、10回以上の騎乗があれば評価を提案します。
+        提案は一覧の各行に出ます。それ未満のうちは、勝率はほとんど偶然で決まるため提案しません。
+      </p>
+    </details>
+  </section>
+
+  <!-- 予想の記録 -->
+  <section class="panel" id="historyPanel">
+    <div class="panel-head">
+      <h2>予想の記録</h2>
+      <span class="hint" id="histCount"></span>
+      <div class="spacer"></div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:6px">
+        <span>競馬場</span>
+        <select id="histTrack" style="width:auto"></select>
+      </label>
+    </div>
+    <div class="stat-row" id="histStats"></div>
+    <div id="histList"></div>
+    <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
+    <p class="hint" style="margin:12px 0 0">
+      着順を入れると的中率が集計され、騎手評価の提案にも使われます。
+      記録はこの端末にのみ保存されます（外部には送信しません）。
+    </p>
   </section>
 
   <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
@@ -161,6 +189,11 @@
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
+
+    <div class="btn-row" style="margin-top:16px">
+      <button type="button" class="primary" id="btnSaveRace">この予想を記録する</button>
+      <span class="hint" id="saveNote" style="align-self:center"></span>
+    </div>
 
     <p class="note">
       本アプリの指数・推定勝率は、入力値をもとにした簡易モデルによる計算結果です。

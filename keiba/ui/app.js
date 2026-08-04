@@ -133,15 +133,29 @@ function renderJockeys(){
   const known = names.filter(n => jockeyRatings[n] != null).length;
   $("jockeyCount").textContent = `${names.length}人（記憶済み ${known}人）`;
 
+  // 記録した結果から集計した成績を添える
+  const stats = {};
+  (typeof H !== "undefined" && H ? H.jockeyStats(history) : []).forEach(x => { stats[x.name] = x; });
+
   $("jockeyList").innerHTML = names.map(n => {
     const nums = horses.filter(h => h.jockeyName === n).map(h => h.num).join("・");
     const cur = horses.find(h => h.jockeyName === n).jockey;
     const remembered = jockeyRatings[n] != null;
+    const st = stats[n];
+    let line = "";
+    if(st){
+      const g = st.suggested;
+      const label = g ? GRADE5.find(x => x.v === g).label : null;
+      line = `<div class="jk-stat mono">${st.rides}戦 勝率${st.winPct}% 複勝${st.showPct}%` +
+             (label ? ` <button type="button" class="jk-sug" data-suggest="${escapeAttr(n)}" data-grade="${g}">${label}を適用</button>` : "") +
+             `</div>`;
+    }
     return `
       <div class="jockey">
         <div class="jk-name">${escapeHtml(n)}${remembered ? '<span class="jk-mark">記憶</span>' : ""}</div>
         <div class="jk-horses">${nums}番</div>
         <select data-jockey="${escapeAttr(n)}">${opts(GRADE5, cur)}</select>
+        ${line}
       </div>`;
   }).join("");
 }
@@ -363,6 +377,9 @@ function run(){
   $("droppedNote").textContent = (dropped && dropped.length)
     ? `予算内に収めるため次の券種を除外しました: ${dropped.join("・")}` : "";
 
+  lastRun = {race: r, rows: rows, bets: bets};
+  $("saveNote").textContent = "";
+
   $("results").style.display = "block";
   $("results").scrollIntoView({behavior:"smooth", block:"start"});
 }
@@ -567,6 +584,16 @@ document.querySelectorAll(".tab").forEach(btn => {
   });
 });
 
+$("jockeyList").addEventListener("click", e => {
+  const name = e.target.dataset.suggest;
+  if(!name) return;
+  const v = Number(e.target.dataset.grade);
+  jockeyRatings[name] = v;
+  saveJockeys(jockeyRatings);
+  horses.forEach(h => { if(h.jockeyName === name) h.jockey = v; });
+  renderHorses();
+  renderJockeys();
+});
 $("jockeyList").addEventListener("change", e => {
   const name = e.target.dataset.jockey;
   if(!name) return;
@@ -630,3 +657,158 @@ $("importFile").addEventListener("change", e => {
 buildTrackSelect();
 syncTrackUI();
 addHorses(6);
+
+/* ============================================================
+   予想の記録
+   保存した予想と、後から入れた着順を端末に残す。
+   集計は TurfHistory（keiba/history.js）に委ねる。
+   ============================================================ */
+const HIST_KEY = "turf-logic-history-v1";
+const H = window.TurfHistory;
+
+function loadHistory(){
+  try{ const a = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function saveHistory(list){
+  try{ localStorage.setItem(HIST_KEY, JSON.stringify(list)); return true; }
+  catch(e){
+    alert("記録を保存できませんでした。端末の保存領域がいっぱいの可能性があります。\n" + e.message);
+    return false;
+  }
+}
+let history = loadHistory();
+let lastRun = null;          // 直近の予想結果（記録ボタン用）
+
+function fmtDate(ms){
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function trackName(k){ return (E.TRACKS[k] && E.TRACKS[k].name) || "不明"; }
+
+/* ---------- 評価の目安の表 ---------- */
+function renderGradeGuide(){
+  $("gradeGuide").innerHTML =
+    `<tr><th>評価</th><th>勝率の目安</th><th>目安の説明</th></tr>` +
+    H.GRADE_GUIDE.map(g =>
+      `<tr><td><b>${g.label}</b></td><td class="mono">${g.win}</td><td>${escapeHtml(g.note)}</td></tr>`
+    ).join("");
+}
+
+/* ---------- 記録一覧 ---------- */
+function renderHistory(){
+  const sel = $("histTrack");
+  const cur = sel.value || "all";
+  const tracks = [];
+  history.forEach(r => {
+    const k = r.race && r.race.track;
+    if(k && tracks.indexOf(k) < 0) tracks.push(k);
+  });
+  sel.innerHTML = `<option value="all">すべて</option>` +
+    tracks.map(k => `<option value="${k}">${trackName(k)}</option>`).join("");
+  sel.value = (cur === "all" || tracks.indexOf(cur) >= 0) ? cur : "all";
+
+  const list = sel.value === "all" ? history
+             : history.filter(r => r.race && r.race.track === sel.value);
+
+  $("histEmpty").style.display = list.length ? "none" : "block";
+  $("histCount").textContent = history.length ? `${history.length}件` : "";
+
+  const s = H.raceStats(list);
+  $("histStats").innerHTML = !s.done ? "" : [
+    ["記録", `${s.done}/${s.total}件`, "着順を入れた件数"],
+    ["◎の勝率", `${s.winPct}%`, `${s.win}/${s.done}`],
+    ["◎の複勝率", `${s.showPct}%`, `${s.show}/${s.done}`],
+    ["上位3頭に1着", `${s.top3Pct}%`, `${s.top3}/${s.done}`]
+  ].map(([k, v, sub]) =>
+    `<div class="stat-tile"><div class="k">${k}</div><div class="v mono">${v}</div><div class="s mono">${sub}</div></div>`
+  ).join("");
+
+  $("histList").innerHTML = list.map(r => {
+    const top = (r.pred && r.pred[0]) || {};
+    const done = H.hasResult(r);
+    const res = done ? `${r.result.first}-${r.result.second || "?"}-${r.result.third || "?"}` : "";
+    const hit = done && top.num === r.result.first;
+    const inShow = done && [r.result.first, r.result.second, r.result.third].indexOf(top.num) >= 0;
+    const badge = !done ? `<span class="tag style">着順未入力</span>`
+      : hit ? `<span class="tag value">◎的中</span>`
+      : inShow ? `<span class="tag over">◎複勝圏</span>`
+      : `<span class="tag style">◎圏外</span>`;
+    return `
+    <details class="hist" data-id="${escapeAttr(r.id)}">
+      <summary>
+        <span class="h-date mono">${fmtDate(r.savedAt)}</span>
+        <span class="h-race">${trackName(r.race.track)} ${r.race.distance}m</span>
+        <span class="h-top">◎${top.num || "-"} ${escapeHtml(top.name || "")}</span>
+        ${badge}${done ? `<span class="h-res mono">${res}</span>` : ""}
+      </summary>
+      <div class="hist-body">
+        <table class="hist-table">
+          <tr><th>印</th><th>馬番</th><th>馬名</th><th>騎手</th><th>オッズ</th><th>勝率</th></tr>
+          ${(r.pred || []).slice(0, 8).map((p, i) => `
+            <tr${done && p.num === r.result.first ? ' class="won"' : ""}>
+              <td>${i < E.MARKS.length ? E.MARKS[i] : i+1}</td>
+              <td class="mono">${p.num}</td>
+              <td>${escapeHtml(p.name || "")}</td>
+              <td>${escapeHtml(p.jockeyName || "")}</td>
+              <td class="mono">${p.odds}</td>
+              <td class="mono">${(p.prob*100).toFixed(1)}%</td>
+            </tr>`).join("")}
+        </table>
+        <div class="res-form">
+          <span class="hint">着順（馬番）</span>
+          <input type="number" min="0" max="18" placeholder="1着" data-res="first"  value="${done ? r.result.first  : ""}">
+          <input type="number" min="0" max="18" placeholder="2着" data-res="second" value="${done && r.result.second ? r.result.second : ""}">
+          <input type="number" min="0" max="18" placeholder="3着" data-res="third"  value="${done && r.result.third  ? r.result.third  : ""}">
+          <button type="button" class="primary" data-act="save">結果を記録</button>
+          <button type="button" class="danger" data-act="delete">削除</button>
+        </div>
+      </div>
+    </details>`;
+  }).join("");
+}
+
+$("histTrack").addEventListener("change", renderHistory);
+
+$("histList").addEventListener("click", e => {
+  const act = e.target.dataset.act;
+  if(!act) return;
+  const box = e.target.closest(".hist");
+  const id = box.dataset.id;
+  const r = history.find(x => x.id === id);
+  if(!r) return;
+
+  if(act === "delete"){
+    if(!confirm("この記録を削除します。よろしいですか？")) return;
+    history = history.filter(x => x.id !== id);
+    saveHistory(history);
+    renderHistory();
+    renderJockeys();
+    return;
+  }
+  const val = k => numOr(box.querySelector(`[data-res="${k}"]`).value, 0);
+  const first = val("first");
+  if(!(first >= 1 && first <= 18)){
+    alert("1着の馬番を入れてください。");
+    return;
+  }
+  r.result = {first: first, second: val("second"), third: val("third")};
+  saveHistory(history);
+  renderHistory();
+  renderJockeys();
+});
+
+/* ---------- 予想の保存 ---------- */
+$("btnSaveRace").addEventListener("click", () => {
+  if(!lastRun){ alert("先に予想してください。"); return; }
+  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now());
+  history = H.addRecord(history, rec);
+  if(!saveHistory(history)) return;
+  $("saveNote").textContent = "記録しました。下の「予想の記録」から着順を入れられます。";
+  renderHistory();
+  $("historyPanel").scrollIntoView({behavior:"smooth", block:"start"});
+});
+
+renderGradeGuide();
+renderHistory();
