@@ -229,6 +229,8 @@ async function main(){
   race.pace = (opts.pace && resolvePace(opts.pace)) || race.pace || auto.pace;
 
   const rows = E.analyze(race, parsed.horses);
+  // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
+  E.fillBreakEven(race, parsed.horses, rows);
   const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, race.budget);
   const verdict = E.verdictOf(rows);
 
@@ -300,7 +302,7 @@ async function main(){
   // ランキング
   const head = `${padStart("印",4)} ${padStart("馬番",4)} ${padEnd("馬名",20)} ` +
                `${padStart("指数",6)} ${padStart("オッズ",7)} ${padStart("勝率",7)} ` +
-               `${padStart("期待値",7)} ${padStart("市場比",7)}  脚質`;
+               `${padStart("期待値",7)} ${padStart("買い下限",8)}  脚質`;
   console.log(C.dim + head + C.r);
   console.log(C.dim + "─".repeat(45) + C.r);
 
@@ -313,7 +315,7 @@ async function main(){
       `${padStart(mark,4)} ${padStart(x.h.num,4)} ${padEnd(x.h.name || "（不明）",20)} ` +
       `${padStart(x.score.toFixed(1),6)} ${padStart(x.h.odds.toFixed(1),7)} ` +
       `${padStart((x.prob*100).toFixed(1)+"%",7)} ${padStart(x.ev.toFixed(2),7)} ` +
-      `${padStart(x.edge.toFixed(2),7)}  ${E.STYLE_LABEL[x.h.style]}`;
+      `${padStart(x.minOdds == null ? "—" : x.minOdds + "倍〜", 8)}  ${E.STYLE_LABEL[x.h.style]}`;
     console.log((i === 0 ? C.b : "") + line + C.r + tag);
   });
 
@@ -326,17 +328,24 @@ async function main(){
     console.log(`${C.b}${C.green}推奨買い目${C.r} ${C.dim}予算 ${yen(race.budget)} / 投入 ${yen(spend)} / 使用 ${yen(spent)}${C.r}`);
     bets.forEach(b => {
       console.log(`  ${C.b}${padEnd(b.name, 18)}${C.r}${C.dim}${b.combos.length}点 × ${yen(b.unit)} = ${yen(b.total)}${C.r}`);
-      console.log(`    ${b.combos.join("  ")}`);
       const ev = b.evKnown != null
         ? `期待値 ${b.evKnown.toFixed(2)}（オッズが分かっているので計算済み）`
-        : `必要オッズ ${b.needOdds.toFixed(1)}倍 以上（これ未満なら見送り）`;
+        : `必要オッズ 平均 ${b.needOdds.toFixed(1)}倍 以上`;
       console.log(`    ${C.dim}的中 ${(b.hit*100).toFixed(1)}% ／ ${ev}${C.r}`);
+      /* 1点ごとの必要オッズ。どの1点を外すべきかはここで決まる。
+         1点しかない券種では出さない。単勝は上の「買い下限」の方が正しく
+         （オッズが動けば推定勝率も動くことを織り込んである）、
+         2つ並べると食い違って見えるため。 */
+      (b.points && b.points.length > 1 ? b.points : []).forEach(pt => {
+        console.log(`      ${padEnd(pt.combo, 12)}${C.dim}的中 ${padStart((pt.hit*100).toFixed(1)+"%",6)}` +
+                    ` ／ ${padStart(pt.needOdds.toFixed(1)+"倍〜", 9)}${C.r}`);
+      });
     });
     if(dropped && dropped.length){
       console.log(`  ${C.dim}（予算内に収めるため除外: ${dropped.join("・")}）${C.r}`);
     }
     console.log(`  ${C.dim}馬連・ワイド・三連複はオッズを入力していないため期待値を計算できません。`);
-    console.log(`  ${C.dim}買う前に、実際のオッズが上の「必要オッズ」以上かを確かめてください。${C.r}`);
+    console.log(`  ${C.dim}実際のオッズが1点ごとの必要オッズを下回る点は、その点だけ外してください。${C.r}`);
   }
 
   // 警告

@@ -363,6 +363,23 @@ label.chk input{width:16px;height:16px;accent-color:var(--red);}
 .tag.value{background:var(--red-tint);color:var(--red);border-color:var(--red-line);}
 .tag.over{background:var(--blue-tint);color:var(--blue);border-color:var(--blue-line);}
 .tag.style{background:var(--paper);color:var(--ink-soft);border-color:var(--line);}
+/* 買い下限オッズ（締切間際はここだけ見ればよい） */
+.tag.floor{
+  background:var(--paper);color:var(--ink-soft);border-color:var(--line);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
+}
+.tag.floor.on{background:var(--turf-tint);color:var(--turf);border-color:var(--turf);}
+.tag.none{background:var(--paper);color:var(--ink-soft);border-color:var(--line);opacity:.7;}
+
+/* 買い目1点ごとの必要オッズ */
+.pt-table{
+  border-collapse:collapse;width:100%;font-size:.72rem;
+  border-top:1px dashed var(--line);margin-top:6px;
+}
+.pt-table th{color:var(--ink-soft);font-weight:700;text-align:left;padding:4px 6px 2px;}
+.pt-table td{padding:2px 6px;border-top:1px solid var(--line);}
+.pt-table td.need{font-weight:700;color:var(--ink);text-align:right;}
+.pt-table th:last-child{text-align:right;}
 
 /* ---------- Bets ---------- */
 .bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
@@ -1288,6 +1305,53 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     return Math.max(100, Math.floor(total / points / 100) * 100);
   }
 
+  /* ============================================================
+     買い下限オッズ
+     ------------------------------------------------------------
+     締切間際のオッズの動きに追われる、という問題への答え。
+
+     いちいち計算し直さなくても済むように、馬ごとに
+     「これ以上のオッズが付いていれば単勝を買ってよい」という
+     1つの数字を先に出しておく。あとは締切直前にオッズ表示を見て、
+     その数字を上回っているかどうかだけを確かめればよい。
+
+     オッズが動くと市場推定勝率も動くので、単純に 1÷推定勝率 では出せない
+     （オッズが上がると推定勝率も下がる）。期待値はオッズに対して単調に
+     増えるので、実際に analyze を回しながら期待値がちょうど1になる点を
+     二分法で探す。近似式を置かず本体の計算をそのまま使うため、
+     表示している推定勝率と必ず整合する。
+     ============================================================ */
+  function breakEvenOdds(r, hs, num){
+    const live = hs.filter(h => !h.scratched);
+    if(!live.some(h => h.num === num)) return null;
+
+    const evAt = o => {
+      const copy = live.map(h => h.num === num ? Object.assign({}, h, {odds: o}) : h);
+      const x = analyze(r, copy).find(y => y.h.num === num);
+      return x ? x.ev : 0;
+    };
+
+    const LO = 1.0, HI = 1000;
+    if(evAt(LO) >= BUY_EV) return LO;      // どんなオッズでも買える馬
+    if(evAt(HI) <  BUY_EV) return null;    // どれだけ付いても買えない馬
+
+    // 対数で刻む（1倍と1000倍を同じ精度で扱うため）
+    let lo = Math.log(LO), hi = Math.log(HI);
+    for(let k = 0; k < 24; k++){
+      const m = (lo + hi) / 2;
+      if(evAt(Math.exp(m)) >= BUY_EV) hi = m; else lo = m;
+    }
+    const v = Math.exp(hi);
+    // 表示に合わせて丸める。丸めで下回らないよう常に切り上げる。
+    return v < 10 ? Math.ceil(v * 10) / 10 : Math.ceil(v);
+  }
+
+  // 全馬ぶんまとめて求め、rows に minOdds として持たせる
+  function fillBreakEven(r, hs, rows){
+    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num); });
+    return rows;
+  }
+
   /* ---------- このレースを買うべきか ----------
      日本の馬券は控除率が20〜25%ある。市場をなぞるだけの予想では
      買った時点で必ず負ける。買う根拠があるのは、
@@ -1381,6 +1445,15 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     const push = (o) => { if(o.combos.length) bets.push(o); };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
 
+    /* 買い目1点ごとの的中確率と必要オッズ。
+       券種としての必要オッズは点数の平均でしかない。実際のオッズは点ごとに
+       まったく違うので、平均だけでは「どの1点を外すべきか」が分からない。
+       同額で買う場合、1点ごとの損益分岐は「その点の的中確率 × オッズ ＝ 1」
+       なので、必要オッズは 1÷的中確率 になる。 */
+    const withPoints = (combos, hits) => combos.map((c, k) => ({
+      combo: c, hit: hits[k], needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity
+    }));
+
     /* 荒れるレースでは推定勝率そのものが当てにならなくなる。
        単勝（1頭に賭ける）の比重を下げ、面で取る券種に回す。 */
     const up = rows.upset || upsetRisk(rows.race, rows);
@@ -1393,6 +1466,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k,
             ratio: k === 0 ? tanRatio : tanRatio / 2,
             combos: [String(x.h.num)], hit: x.prob, needOdds: 1 / x.prob, evKnown: x.ev,
+            points: withPoints([String(x.h.num)], [x.prob]),
             memo: `推定勝率 ${(x.prob*100).toFixed(1)}% × ${x.h.odds.toFixed(1)}倍 ＝ 期待値 ${x.ev.toFixed(2)}`});
     });
 
@@ -1404,6 +1478,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       if(hit >= 0.5){
         push({name: `複勝（${places}着まで）`, prio: 85, ratio: 0.12,
               combos: [String(a)], hit: hit, needOdds: need(hit, 1),
+              points: withPoints([String(a)], [hit]),
               memo: `${places}着以内 ${(hit*100).toFixed(0)}%。表示が ${need(hit,1).toFixed(1)}倍 以上なら買う価値があります`});
       }
     }
@@ -1414,9 +1489,11 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
 
     if(mates.length){
       const combos = mates.map(x => `${a}-${x}`);
-      const hit = mates.reduce((s, m) => s + quinellaProb(probs, idx[a], idx[m]), 0);
+      const each = mates.map(m => quinellaProb(probs, idx[a], idx[m]));
+      const hit = each.reduce((s, v) => s + v, 0);
       push({name: "馬連 流し", prio: 80, ratio: 0.20, combos: combos,
             hit: hit, needOdds: need(hit, combos.length),
+            points: withPoints(combos, each),
             memo: `${a} 軸 → ${mates.join("・")}。的中 ${(hit*100).toFixed(1)}%${axisNote}`});
     }
 
@@ -1424,9 +1501,11 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     if(mates.length >= 2 && n >= 4){
       const w = mates.slice(0, 2);
       const combos = w.map(x => `${a}-${x}`);
-      const hit = w.reduce((s, m) => s + wideProb(probs, idx[a], idx[m]), 0);
+      const each = w.map(m => wideProb(probs, idx[a], idx[m]));
+      const hit = each.reduce((s, v) => s + v, 0);
       push({name: "ワイド", prio: 70, ratio: up.level === "high" ? 0.22 : 0.13, combos: combos,
             hit: hit, needOdds: need(hit, combos.length),
+            points: withPoints(combos, each),
             memo: `堅めの押さえ。的中 ${(hit*100).toFixed(1)}%`});
     }
 
@@ -1436,9 +1515,11 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       for(let i=0;i<mates.length;i++){
         for(let j=i+1;j<mates.length;j++){ tri.push(`${a}-${mates[i]}-${mates[j]}`); pairs.push([mates[i], mates[j]]); }
       }
-      const hit = pairs.reduce((s, pr) => s + trioProb(probs, idx[a], idx[pr[0]], idx[pr[1]]), 0);
+      const each = pairs.map(pr => trioProb(probs, idx[a], idx[pr[0]], idx[pr[1]]));
+      const hit = each.reduce((s, v) => s + v, 0);
       push({name: "三連複 軸1頭流し", prio: 60, ratio: up.level === "high" ? 0.28 : 0.20, combos: tri,
             hit: hit, needOdds: need(hit, tri.length),
+            points: withPoints(tri, each),
             memo: `${a} 軸 → ${mates.join("・")}。的中 ${(hit*100).toFixed(1)}%`});
     }
 
@@ -1446,6 +1527,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       const hit = wideProb(probs, idx[a], idx[value.h.num]);
       push({name: "ワイド（妙味）", prio: 40, ratio: 0.10, combos: [`${a}-${value.h.num}`],
             hit: hit, needOdds: need(hit, 1),
+            points: withPoints([`${a}-${value.h.num}`], [hit]),
             memo: `期待値 ${value.ev.toFixed(2)} の ${value.h.num}番 を絡めた一撃`});
     }
 
@@ -1541,6 +1623,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
+    breakEvenOdds, fillBreakEven,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
     MAX_FIELD: 18
@@ -3201,6 +3284,8 @@ function run(){
   }
 
   const rows = E.analyze(r, hs);
+  // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
+  E.fillBreakEven(r, hs, rows);
   const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
   const verdict = E.verdictOf(rows);
 
@@ -3264,6 +3349,11 @@ function run(){
     const tags = [`<span class="tag style">${E.STYLE_LABEL[x.h.style]}</span>`];
     if(E.isValue(x)) tags.push(`<span class="tag value">妙味</span>`);
     else if(E.isOverbet(x)) tags.push(`<span class="tag over">過剰人気</span>`);
+    /* 買い下限＝この馬の単勝を買ってよいオッズの下限。
+       締切直前は、この数字とオッズ表示を見比べるだけで判断できる。 */
+    tags.push(x.minOdds == null
+      ? `<span class="tag none">買えない</span>`
+      : `<span class="tag floor${x.h.odds >= x.minOdds ? " on" : ""}">${x.minOdds}倍〜で買い</span>`);
     return `
       <div class="rank${i === 0 ? " top" : ""}">
         <div class="mark ${markCls}" title="${i < E.MARK_NAME.length ? E.MARK_NAME[i] : ""}">${mark || (i+1)}</div>
@@ -3299,6 +3389,16 @@ function run(){
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
           : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
+      ${(x.points && x.points.length > 1) ? `
+      <table class="pt-table">
+        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th></tr>
+        ${x.points.map(pt => `<tr>
+          <td class="mono">${escapeHtml(pt.combo)}</td>
+          <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
+          <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
+        </tr>`).join("")}
+      </table>
+      <div class="hint">この表を下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
       <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
     </div>`).join("")

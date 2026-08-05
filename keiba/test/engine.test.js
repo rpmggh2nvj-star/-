@@ -444,6 +444,95 @@ t("オッズが分からない券種には必要オッズを付ける", () => {
   assert.ok(bets.some(b => b.evKnown == null), "必要オッズを出す券種が無い");
 });
 
+t("1点ごとの的中確率と必要オッズを出す", () => {
+  /* 券種としての必要オッズは点数の平均でしかない。どの1点を外すか決めるには
+     1点ごとの数字が要る。同額で買う場合、1点の損益分岐は 1÷的中確率。 */
+  const rows = E.analyze(race(), lively(12));
+  const {bets} = E.buildBets(rows, 20000);
+  bets.forEach(b => {
+    assert.ok(b.points, b.name + " に1点ごとの数字が無い");
+    assert.strictEqual(b.points.length, b.combos.length, b.name + " の点数が合わない");
+    b.points.forEach((pt, i) => {
+      assert.strictEqual(pt.combo, b.combos[i]);
+      assert.ok(pt.hit > 0 && pt.hit <= 1, `${b.name} ${pt.combo} の的中確率 ${pt.hit}`);
+      assert.ok(Math.abs(pt.needOdds - 1 / pt.hit) < 1e-9, "1点の必要オッズが合わない");
+    });
+    // 1点ごとの的中確率の合計が、券種全体の的中確率になる
+    const sum = b.points.reduce((s, p) => s + p.hit, 0);
+    assert.ok(Math.abs(sum - b.hit) < 1e-9, `${b.name} の合計が ${sum} と ${b.hit} で合わない`);
+    // 平均の必要オッズは 点数 ÷ 合計確率
+    assert.ok(Math.abs(b.needOdds - b.combos.length / sum) < 1e-9 || b.evKnown != null,
+      b.name + " の平均必要オッズが合わない");
+  });
+});
+
+t("点ごとの必要オッズは、当たりにくい点ほど高い", () => {
+  const rows = E.analyze(race(), lively(12));
+  const {bets} = E.buildBets(rows, 20000);
+  const nagashi = bets.find(b => b.name === "馬連 流し");
+  assert.ok(nagashi && nagashi.points.length >= 2);
+  for(let i = 1; i < nagashi.points.length; i++){
+    const a = nagashi.points[i-1], b = nagashi.points[i];
+    // 相手は推定勝率の高い順に並ぶので、必要オッズは上がっていく
+    assert.ok(b.needOdds >= a.needOdds - 1e-9,
+      `${a.combo}(${a.needOdds.toFixed(1)}) → ${b.combo}(${b.needOdds.toFixed(1)})`);
+  }
+});
+
+console.log("\n■ 買い下限オッズ（締切間際の判断用）");
+
+t("買い下限を上回っていることと、期待値が1以上であることは一致する", () => {
+  /* これが崩れると、締切間際に買い下限だけ見て判断できなくなる。 */
+  const hs = lively(12);
+  const r = race({track:"morioka", surface:"dirt", distance:1000});
+  const rows = E.fillBreakEven(r, hs, E.analyze(r, hs));
+  rows.forEach(x => {
+    if(x.minOdds == null){
+      assert.ok(x.ev < 1.0, `買えない判定なのに期待値 ${x.ev.toFixed(2)}（${x.h.num}番）`);
+      return;
+    }
+    const buyable = x.h.odds >= x.minOdds;
+    assert.strictEqual(buyable, x.ev >= 1.0,
+      `${x.h.num}番: オッズ${x.h.odds} 下限${x.minOdds} 期待値${x.ev.toFixed(2)} が食い違う`);
+  });
+});
+
+t("買い下限ちょうどのオッズなら、期待値がほぼ1になる", () => {
+  // 「オッズが動けば推定勝率も動く」ことを織り込めているかの検算
+  const hs = lively(10);
+  const r = race();
+  const rows = E.fillBreakEven(r, hs, E.analyze(r, hs));
+  rows.filter(x => x.minOdds != null && x.minOdds > 1.0).forEach(x => {
+    const at = hs.map(h => h.num === x.h.num ? Object.assign({}, h, {odds: x.minOdds}) : h);
+    const ev = E.analyze(r, at).find(y => y.h.num === x.h.num).ev;
+    assert.ok(ev >= 0.98 && ev <= 1.15,
+      `${x.h.num}番 下限${x.minOdds}倍 のときの期待値が ${ev.toFixed(3)}`);
+  });
+});
+
+t("どんなオッズでも買えない馬は null にする", () => {
+  // 能力が最下位で人気だけある馬は、オッズがいくら付いても買い頃にならないことがある
+  const hs = lively(8);
+  const r = race();
+  const rows = E.fillBreakEven(r, hs, E.analyze(r, hs));
+  assert.ok(rows.every(x => x.minOdds === null || x.minOdds >= 1.0), "1倍未満の下限が出ている");
+  assert.ok(rows.some(x => x.minOdds != null), "全馬が買えない判定になっている");
+});
+
+t("取消馬は買い下限の計算に含めない", () => {
+  const hs = lively(10);
+  hs[9].scratched = true;
+  const r = race();
+  const rows = E.fillBreakEven(r, hs, E.analyze(r, hs));
+  assert.strictEqual(rows.length, 9);
+  assert.ok(!rows.some(x => x.h.num === 10));
+  assert.ok(rows.every(x => "minOdds" in x), "買い下限が入っていない馬がある");
+});
+
+t("出走馬にいない馬番を渡しても落ちない", () => {
+  assert.strictEqual(E.breakEvenOdds(race(), lively(8), 99), null);
+});
+
 t("複勝は5頭以上で2着まで、8頭以上で3着まで", () => {
   assert.strictEqual(E.placePositions(4), 0);
   assert.strictEqual(E.placePositions(5), 2);
