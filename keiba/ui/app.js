@@ -470,18 +470,21 @@ function run(){
         <span class="k">的中</span><span class="v">${(x.hit*100).toFixed(1)}%</span>
         ${x.evKnown != null
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
-          : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
+          : x.evEst != null
+            ? `<span class="k">推定期待値</span><span class="v ev-ok">${x.evEst.toFixed(2)}</span>`
+            : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
-        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th></tr>
+        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
         ${x.points.map(pt => `<tr>
           <td class="mono">${escapeHtml(pt.combo)}</td>
           <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
           <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
+          <td class="mono need">${pt.ev != null ? pt.ev.toFixed(2) : "—"}</td>
         </tr>`).join("")}
       </table>
-      <div class="hint">この表を下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
+      <div class="hint">実際のオッズが必要オッズを下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
       <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
     </div>`).join("")
@@ -490,9 +493,11 @@ function run(){
   const notes = [];
   if(dropped && dropped.length) notes.push(`予算内に収めるため次の券種を除外しました: ${dropped.join("・")}`);
   if(bets.some(x => x.evKnown == null)){
-    notes.push("馬連・ワイド・三連複は、そのオッズを入力していないため期待値を計算できません。" +
-               "買う前に、実際のオッズが「必要オッズ」以上かを確かめてください。下回るなら見送りです。");
+    notes.push("連系の推定期待値は、単勝オッズから市場の組み合わせ確率を組み立てて出しています。" +
+               "実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。");
   }
+  const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
+  if(cutN) notes.push(`推定期待値が1.0を割る ${cutN}点 は、はじめから外してあります。`);
   $("droppedNote").textContent = notes.join(" ");
 
   lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};

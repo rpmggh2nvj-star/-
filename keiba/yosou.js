@@ -329,8 +329,9 @@ async function main(){
     bets.forEach(b => {
       console.log(`  ${C.b}${padEnd(b.name, 18)}${C.r}${C.dim}${b.combos.length}点 × ${yen(b.unit)} = ${yen(b.total)}${C.r}`);
       const ev = b.evKnown != null
-        ? `期待値 ${b.evKnown.toFixed(2)}（オッズが分かっているので計算済み）`
-        : `必要オッズ 平均 ${b.needOdds.toFixed(1)}倍 以上`;
+        ? `期待値 ${b.evKnown.toFixed(2)}（オッズから計算）`
+        : `推定期待値 ${b.evEst != null ? b.evEst.toFixed(2) : "—"}` +
+          ` ／ 必要オッズ 平均 ${b.needOdds.toFixed(1)}倍 以上`;
       console.log(`    ${C.dim}的中 ${(b.hit*100).toFixed(1)}% ／ ${ev}${C.r}`);
       /* 1点ごとの必要オッズ。どの1点を外すべきかはここで決まる。
          1点しかない券種では出さない。単勝は上の「買い下限」の方が正しく
@@ -338,14 +339,15 @@ async function main(){
          2つ並べると食い違って見えるため。 */
       (b.points && b.points.length > 1 ? b.points : []).forEach(pt => {
         console.log(`      ${padEnd(pt.combo, 12)}${C.dim}的中 ${padStart((pt.hit*100).toFixed(1)+"%",6)}` +
-                    ` ／ ${padStart(pt.needOdds.toFixed(1)+"倍〜", 9)}${C.r}`);
+                    ` ／ ${padStart(pt.needOdds.toFixed(1)+"倍〜", 9)}` +
+                    (pt.ev != null ? ` ／ 推定期待値 ${pt.ev.toFixed(2)}` : "") + C.r);
       });
     });
     if(dropped && dropped.length){
       console.log(`  ${C.dim}（予算内に収めるため除外: ${dropped.join("・")}）${C.r}`);
     }
-    console.log(`  ${C.dim}馬連・ワイド・三連複はオッズを入力していないため期待値を計算できません。`);
-    console.log(`  ${C.dim}実際のオッズが1点ごとの必要オッズを下回る点は、その点だけ外してください。${C.r}`);
+    console.log(`  ${C.dim}連系の推定期待値は、単勝オッズから市場の組み合わせ確率を組み立てて出しています。`);
+    console.log(`  ${C.dim}実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。${C.r}`);
   }
 
   // 警告

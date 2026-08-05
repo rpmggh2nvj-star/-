@@ -1412,8 +1412,41 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
             advice:"買うなら予算の3割まで。見送っても構いません。"};
   }
 
+  /* ============================================================
+     連系の券種の期待値を、単勝オッズだけから推定する
+     ------------------------------------------------------------
+     馬連や三連単のオッズは入力していない。だが単勝オッズがあれば、
+     市場がその組み合わせをどう見ているかは組み立てられる。
+
+       市場の組み合わせ確率 = 単勝オッズから作った市場勝率を Harville に通したもの
+       市場のオッズ ≒ (1 − 控除率) ÷ 市場の組み合わせ確率
+       期待値 = こちらの確率 × 市場のオッズ
+              = (こちらの確率 ÷ 市場の確率) × (1 − 控除率)
+
+     つまり必要なのは「こちらの見立てと市場の見立ての比」だけになる。
+
+     Harville は人気馬の連対確率を高めに出す癖があるが、こちらの確率も
+     市場の確率も同じ変換を通すため、比を取る段階でその偏りは大きく打ち消される。
+     絶対値としての的中確率より、この比のほうが当てになる。
+
+     ただし実際の三連単プールは単勝プールの投影とは一致しない
+     （人気の並びが買われすぎる）。あくまで推定であり、
+     オッズが確認できるなら実際の値を優先すること。
+     ============================================================ */
+  // 控除率（JRAの標準。地方はこれよりやや高い場合がある）
+  const TAKEOUT = {
+    tan: 0.20, fuku: 0.20,
+    umaren: 0.225, wide: 0.225,
+    sanrenpuku: 0.25, sanrentan: 0.275
+  };
+
+  function comboEv(pModel, pMarket, kind){
+    if(!(pMarket > 0)) return 0;
+    return (pModel / pMarket) * (1 - (TAKEOUT[kind] != null ? TAKEOUT[kind] : 0.25));
+  }
+
   /* ---------- 買い目 ----------
-     券種ごとに「的中確率」と「必要オッズ」を付ける。
+     券種ごとに「的中確率」「必要オッズ」「推定期待値」を付ける。
 
      単勝だけは、入力されたオッズから期待値をそのまま計算できるので、
      期待値が1.0を超える馬に限って買う。本命だからという理由では買わない。
@@ -1433,6 +1466,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     }
 
     const probs = rows.map(x => x.prob);
+    const mkts  = rows.map(x => x.market);      // 市場の見立て（同じ変換に通して比を取る）
     const idx = {};
     rows.forEach((x, i) => { idx[x.h.num] = i; });
     const n = rows.length;
@@ -1452,17 +1486,32 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
 
     const bets = [];
     // prio は予算が足りないときに残す優先度（大きいほど残る）
-    const push = (o) => { if(o.combos.length) bets.push(o); };
+    const push = (o) => {
+      if(!o.combos.length) return;
+      if(o.cut == null) o.cut = 0;      // 候補から外した点数（無ければ0）
+      bets.push(o);
+    };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
 
-    /* 買い目1点ごとの的中確率と必要オッズ。
+    /* 買い目1点ごとの的中確率・必要オッズ・推定期待値。
        券種としての必要オッズは点数の平均でしかない。実際のオッズは点ごとに
        まったく違うので、平均だけでは「どの1点を外すべきか」が分からない。
        同額で買う場合、1点ごとの損益分岐は「その点の的中確率 × オッズ ＝ 1」
        なので、必要オッズは 1÷的中確率 になる。 */
-    const withPoints = (combos, hits) => combos.map((c, k) => ({
-      combo: c, hit: hits[k], needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity
+    const withPoints = (combos, hits, mktHits, kind) => combos.map((c, k) => ({
+      combo: c, hit: hits[k],
+      needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity,
+      ev: mktHits ? comboEv(hits[k], mktHits[k], kind) : null
     }));
+
+    /* 推定期待値が1を割る点は買わない。
+       ここを残すと、当たりやすいだけで割の悪い点（人気どうしの組み合わせ）が
+       必ず混ざる。単勝で「本命だから買う」をやめたのと同じ理屈である。 */
+    const keepGood = (pts, floor) => {
+      const lim = floor == null ? BUY_EV : floor;
+      const good = pts.filter(pt => pt.ev == null || pt.ev >= lim);
+      return {kept: good, cut: pts.length - good.length};
+    };
 
     /* 荒れるレースでは推定勝率そのものが当てにならなくなる。
        単勝（1頭に賭ける）の比重を下げ、面で取る券種に回す。 */
@@ -1485,38 +1534,72 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     if(places){
       const ai = idx[a];
       const hit = topKProb(probs, ai, places);
-      if(hit >= 0.5){
+      const mkHit = topKProb(mkts, ai, places);
+      // 当たりやすくても割が悪ければ買わない。人気馬の複勝はここで落ちる。
+      if(hit >= 0.5 && comboEv(hit, mkHit, "fuku") >= BUY_EV){
         push({name: `複勝（${places}着まで）`, prio: 85, ratio: 0.12,
               combos: [String(a)], hit: hit, needOdds: need(hit, 1),
-              points: withPoints([String(a)], [hit]),
+              evEst: comboEv(hit, mkHit, "fuku"),
+              points: withPoints([String(a)], [hit], [mkHit], "fuku"),
               memo: `${places}着以内 ${(hit*100).toFixed(0)}%。表示が ${need(hit,1).toFixed(1)}倍 以上なら買う価値があります`});
       }
     }
 
-    // --- 相手の広げ方は荒れ度で決める（堅い2頭／やや荒れ3頭／荒れ5頭） ---
+    /* --- 相手の広げ方は荒れ度で決める（堅い2頭／やや荒れ3頭／荒れ5頭） ---
+
+       推定勝率の高い順に取るだけでは、相手はほぼ人気上位で埋まる。
+       それでは「人気薄が絡んで荒れた」レースを構造的に取りこぼす。
+       荒れると読んだレースでは枠の一部を空けて、期待値の高い人気薄を入れる。 */
     const v = verdictOf(rows);
-    const mates = rows.filter(x => x.h.num !== a).slice(0, up.width).map(x => x.h.num);
+    const others = rows.filter(x => x.h.num !== a);
+    let mateRows;
+    if(up.level === "low" || others.length <= up.width){
+      mateRows = others.slice(0, up.width);
+    }else{
+      const keep = Math.max(2, up.width - 2);              // 上位は必ず残す
+      const head = others.slice(0, keep);
+      const dark = others.slice(keep)
+        .filter(x => x.prob >= 0.015 && isValue(x))        // 割の良い人気薄だけ
+        .sort((x, y) => y.ev - x.ev)
+        .slice(0, up.width - keep);
+      mateRows = head.concat(dark);
+      // 人気薄の候補が足りなければ、確率順で埋める
+      others.forEach(x => {
+        if(mateRows.length < up.width && mateRows.indexOf(x) < 0) mateRows.push(x);
+      });
+      mateRows = mateRows.slice(0, up.width);
+    }
+    const mates = mateRows.map(x => x.h.num);
+    const darkMates = mateRows.filter(x => x.rank > Math.max(2, up.width - 2)).map(x => x.h.num);
 
     if(mates.length){
       const combos = mates.map(x => `${a}-${x}`);
       const each = mates.map(m => quinellaProb(probs, idx[a], idx[m]));
-      const hit = each.reduce((s, v) => s + v, 0);
-      push({name: "馬連 流し", prio: 80, ratio: 0.20, combos: combos,
-            hit: hit, needOdds: need(hit, combos.length),
-            points: withPoints(combos, each),
-            memo: `${a} 軸 → ${mates.join("・")}。的中 ${(hit*100).toFixed(1)}%${axisNote}`});
+      const mk   = mates.map(m => quinellaProb(mkts,  idx[a], idx[m]));
+      const g = keepGood(withPoints(combos, each, mk, "umaren"));
+      const hit = g.kept.reduce((s, pt) => s + pt.hit, 0);
+      push({name: "馬連 流し", prio: 80, ratio: 0.20,
+            combos: g.kept.map(pt => pt.combo),
+            hit: hit, needOdds: need(hit, g.kept.length),
+            points: g.kept, cut: g.cut,
+            memo: `${a} 軸。的中 ${(hit*100).toFixed(1)}%${axisNote}` +
+                  (g.cut ? `（割の悪い ${g.cut}点 を外しました）` : "")});
     }
 
     // ワイド・三連複は出走4頭以上でないと発売されない
     if(mates.length >= 2 && n >= 4){
-      const w = mates.slice(0, 2);
+      const w = mates.slice(0, up.level === "high" ? 3 : 2);
       const combos = w.map(x => `${a}-${x}`);
       const each = w.map(m => wideProb(probs, idx[a], idx[m]));
-      const hit = each.reduce((s, v) => s + v, 0);
-      push({name: "ワイド", prio: 70, ratio: up.level === "high" ? 0.22 : 0.13, combos: combos,
-            hit: hit, needOdds: need(hit, combos.length),
-            points: withPoints(combos, each),
-            memo: `堅めの押さえ。的中 ${(hit*100).toFixed(1)}%`});
+      const mk   = w.map(m => wideProb(mkts,  idx[a], idx[m]));
+      const g = keepGood(withPoints(combos, each, mk, "wide"));
+      const hit = g.kept.reduce((s, pt) => s + pt.hit, 0);
+      push({name: "ワイド", prio: 70, ratio: up.level === "high" ? 0.22 : 0.13,
+            combos: g.kept.map(pt => pt.combo),
+            hit: hit, needOdds: need(hit, g.kept.length),
+            points: g.kept, cut: g.cut,
+            memo: `取りこぼしを減らす。的中 ${(hit*100).toFixed(1)}%` +
+                  (g.cut ? `（割の悪い ${g.cut}点 を外しました）` : "")});
     }
 
     // --- 三連複：点数が増えるほど必要オッズが上がるので、混戦のときだけ ---
@@ -1526,20 +1609,73 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
         for(let j=i+1;j<mates.length;j++){ tri.push(`${a}-${mates[i]}-${mates[j]}`); pairs.push([mates[i], mates[j]]); }
       }
       const each = pairs.map(pr => trioProb(probs, idx[a], idx[pr[0]], idx[pr[1]]));
-      const hit = each.reduce((s, v) => s + v, 0);
-      push({name: "三連複 軸1頭流し", prio: 60, ratio: up.level === "high" ? 0.28 : 0.20, combos: tri,
-            hit: hit, needOdds: need(hit, tri.length),
-            points: withPoints(tri, each),
-            memo: `${a} 軸 → ${mates.join("・")}。的中 ${(hit*100).toFixed(1)}%`});
+      const mk   = pairs.map(pr => trioProb(mkts,  idx[a], idx[pr[0]], idx[pr[1]]));
+      const g = keepGood(withPoints(tri, each, mk, "sanrenpuku"));
+      const hit = g.kept.reduce((s, pt) => s + pt.hit, 0);
+      push({name: "三連複 軸1頭流し", prio: 60, ratio: up.level === "high" ? 0.28 : 0.20,
+            combos: g.kept.map(pt => pt.combo),
+            hit: hit, needOdds: need(hit, g.kept.length),
+            points: g.kept, cut: g.cut,
+            memo: `${a} 軸。的中 ${(hit*100).toFixed(1)}%` +
+                  (g.cut ? `（割の悪い ${g.cut}点 を外しました）` : "")});
+    }
+
+    /* --- 三連単 ---
+       着順まで当てるので当たりにくいが、その分オッズが大きく、
+       人気の並びが買われすぎる（＝人気薄が絡む並びは割がよい）券種でもある。
+       ここは「当たりやすい順」ではなく「推定期待値の高い順」に取る。
+       当たりやすさで選ぶと人気どうしの並びばかりになり、必ず割負けする。
+
+       軸は1着か2着に置く。3着まで落とすと点数が跳ね上がるわりに拾えない。 */
+    if(n >= 4 && mates.length >= 2){
+      const cand = [];
+      const seen = {};
+      mates.forEach(m1 => mates.forEach(m2 => {
+        if(m1 === m2) return;
+        [[a, m1, m2], [m1, a, m2]].forEach(o => {
+          const key = o.join("-");
+          if(seen[key]) return;
+          seen[key] = 1;
+          const pm = orderProb(probs, idx[o[0]], idx[o[1]], idx[o[2]]);
+          const pk = orderProb(mkts,  idx[o[0]], idx[o[1]], idx[o[2]]);
+          cand.push({combo: key, hit: pm, needOdds: pm > 0 ? 1/pm : Infinity,
+                     ev: comboEv(pm, pk, "sanrentan")});
+        });
+      }));
+      /* 三連単の推定は誤差が大きいので、1.0ぎりぎりでは買わない。
+         点数も絞る。広げるほど1点あたりが薄くなり、当たっても回収が細る。 */
+      const pts = cand.filter(pt => pt.ev >= SANRENTAN_EV)
+                      .sort((x, y) => y.ev - x.ev)
+                      .slice(0, SANRENTAN_MAX);
+      if(pts.length){
+        const hit = pts.reduce((s, pt) => s + pt.hit, 0);
+        const best = pts[0];
+        push({name: "三連単", prio: 30, ratio: up.level === "high" ? 0.22 : 0.14,
+              combos: pts.map(pt => pt.combo),
+              hit: hit, needOdds: need(hit, pts.length), points: pts,
+              cut: cand.length - pts.length,
+              memo: `推定期待値の高い並びだけ ${pts.length}点（最良 ${best.combo} で ${best.ev.toFixed(2)}）。` +
+                    `的中 ${(hit*100).toFixed(1)}%`});
+      }
     }
 
     if(value && value.h.num !== a && n >= 4){
       const hit = wideProb(probs, idx[a], idx[value.h.num]);
+      const mkHit = wideProb(mkts, idx[a], idx[value.h.num]);
+      if(comboEv(hit, mkHit, "wide") >= BUY_EV)
       push({name: "ワイド（妙味）", prio: 40, ratio: 0.10, combos: [`${a}-${value.h.num}`],
             hit: hit, needOdds: need(hit, 1),
-            points: withPoints([`${a}-${value.h.num}`], [hit]),
+            evEst: comboEv(hit, mkHit, "wide"),
+            points: withPoints([`${a}-${value.h.num}`], [hit], [mkHit], "wide"),
             memo: `期待値 ${value.ev.toFixed(2)} の ${value.h.num}番 を絡めた一撃`});
     }
+
+    /* 券種としての推定期待値。同額で買うので、1点ごとの期待値の平均になる。 */
+    bets.forEach(b => {
+      if(b.evEst != null || b.evKnown != null) return;
+      const es = (b.points || []).map(pt => pt.ev).filter(v => v != null);
+      if(es.length) b.evEst = es.reduce((s, v) => s + v, 0) / es.length;
+    });
 
     /* 実際に使う額。期待値の大きさ（レース評価）で決めたうえで、
        荒れやすいレースではさらに絞る。推定勝率が当てにならなくなるためで、
@@ -1582,6 +1718,10 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   const OVER_EV    = 0.70;
   const BUY_EV     = 1.00;         // 単勝を買う最低ライン（元本ちょうど）
   const INFO_MIN   = 0.35;         // これ未満の情報量では買わない
+  /* 三連単は推定の誤差がいちばん大きい（着順まで当てる＝Harvilleの仮定に
+     いちばん強く依存する）ので、ぎりぎりでは買わず、点数も絞る。 */
+  const SANRENTAN_EV  = 1.25;
+  const SANRENTAN_MAX = 8;
 
   function isValue(x){
     return x.ev >= VALUE_EV && (x.prob - x.market) >= VALUE_GAP;
@@ -1633,7 +1773,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
-    breakEvenOdds, fillBreakEven,
+    breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT,
+    SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
     MAX_FIELD: 18
@@ -3397,18 +3538,21 @@ function run(){
         <span class="k">的中</span><span class="v">${(x.hit*100).toFixed(1)}%</span>
         ${x.evKnown != null
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
-          : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
+          : x.evEst != null
+            ? `<span class="k">推定期待値</span><span class="v ev-ok">${x.evEst.toFixed(2)}</span>`
+            : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
-        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th></tr>
+        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
         ${x.points.map(pt => `<tr>
           <td class="mono">${escapeHtml(pt.combo)}</td>
           <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
           <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
+          <td class="mono need">${pt.ev != null ? pt.ev.toFixed(2) : "—"}</td>
         </tr>`).join("")}
       </table>
-      <div class="hint">この表を下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
+      <div class="hint">実際のオッズが必要オッズを下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
       <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
     </div>`).join("")
@@ -3417,9 +3561,11 @@ function run(){
   const notes = [];
   if(dropped && dropped.length) notes.push(`予算内に収めるため次の券種を除外しました: ${dropped.join("・")}`);
   if(bets.some(x => x.evKnown == null)){
-    notes.push("馬連・ワイド・三連複は、そのオッズを入力していないため期待値を計算できません。" +
-               "買う前に、実際のオッズが「必要オッズ」以上かを確かめてください。下回るなら見送りです。");
+    notes.push("連系の推定期待値は、単勝オッズから市場の組み合わせ確率を組み立てて出しています。" +
+               "実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。");
   }
+  const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
+  if(cutN) notes.push(`推定期待値が1.0を割る ${cutN}点 は、はじめから外してあります。`);
   $("droppedNote").textContent = notes.join(" ");
 
   lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};
