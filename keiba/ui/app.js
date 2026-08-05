@@ -367,7 +367,7 @@ function run(){
   }
 
   const rows = E.analyze(r, hs);
-  const {bets, value, dropped} = E.buildBets(rows, r.budget);
+  const {bets, value, dropped, grade, spend} = E.buildBets(rows, r.budget);
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -381,11 +381,19 @@ function run(){
     `${sName}${r.distance}m・${outer}${cName}・想定${pName}ペース・${hs.length}頭` +
     (scratched.length ? `（取消 ${scratched.map(h => h.num + "番").join("・")}）` : "");
 
+  // このレースを買うべきかどうかを最初に、いちばん大きく出す
+  const gradeBox = $("gradeBox");
+  gradeBox.className = "grade g-" + grade.grade;
+  gradeBox.innerHTML =
+    `<div class="g-title">${escapeHtml(grade.title)}</div>` +
+    `<div class="g-reason">${escapeHtml(grade.reason)}</div>` +
+    `<div class="g-advice">${escapeHtml(grade.advice)}</div>`;
+
   $("verdict").innerHTML =
     escapeHtml(verdict.title) +
     `<span class="sub">${escapeHtml(verdict.sub)}` +
     (value ? ` 妙味馬は <b>${value.h.num}番${value.h.name ? " " + escapeHtml(value.h.name) : ""}</b>` +
-             `（市場評価比 ${value.edge.toFixed(2)} 倍・単勝期待値 ${value.ev.toFixed(2)}）。` : "") +
+             `（単勝期待値 ${value.ev.toFixed(2)}・市場評価比 ${value.edge.toFixed(2)} 倍）。` : "") +
     `</span>`;
 
   // 情報量が乏しいときは、その旨をはっきり出す
@@ -432,19 +440,34 @@ function run(){
   }).join("");
 
   const spent = bets.reduce((s, x) => s + x.total, 0);
-  $("budgetLabel").textContent = `予算 ${yen(r.budget)} ／ 使用 ${yen(spent)}`;
-  $("betList").innerHTML = bets.map(x => `
+  $("budgetLabel").textContent = bets.length
+    ? `予算 ${yen(r.budget)} ／ 投入 ${yen(spend)} ／ 使用 ${yen(spent)}`
+    : `予算 ${yen(r.budget)} ／ 使用 0円`;
+
+  $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
       <div class="combo">${x.combos.map(escapeHtml).join("　")}</div>
+      <div class="odds-need">
+        <span class="k">的中</span><span class="v">${(x.hit*100).toFixed(1)}%</span>
+        ${x.evKnown != null
+          ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
+          : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
+      </div>
       <div class="hint">${escapeHtml(x.memo)}</div>
       <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
-    </div>`).join("");
+    </div>`).join("")
+    : `<p class="empty">このレースは買いません。資金を次のレースに残してください。</p>`;
 
-  $("droppedNote").textContent = (dropped && dropped.length)
-    ? `予算内に収めるため次の券種を除外しました: ${dropped.join("・")}` : "";
+  const notes = [];
+  if(dropped && dropped.length) notes.push(`予算内に収めるため次の券種を除外しました: ${dropped.join("・")}`);
+  if(bets.some(x => x.evKnown == null)){
+    notes.push("馬連・ワイド・三連複は、そのオッズを入力していないため期待値を計算できません。" +
+               "買う前に、実際のオッズが「必要オッズ」以上かを確かめてください。下回るなら見送りです。");
+  }
+  $("droppedNote").textContent = notes.join(" ");
 
-  lastRun = {race: r, rows: rows, bets: bets};
+  lastRun = {race: r, rows: rows, bets: bets, grade: grade};
   $("saveNote").textContent = "";
 
   $("results").style.display = "block";
@@ -916,7 +939,7 @@ $("histList").addEventListener("click", e => {
 /* ---------- 予想の保存 ---------- */
 $("btnSaveRace").addEventListener("click", () => {
   if(!lastRun){ alert("先に予想してください。"); return; }
-  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now());
+  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now(), lastRun.grade);
   history = H.addRecord(history, rec);
   if(!saveHistory(history)) return;
   $("saveNote").textContent = "記録しました。下の「予想の記録」から着順を入れられます。";

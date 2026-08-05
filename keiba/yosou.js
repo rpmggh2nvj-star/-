@@ -229,7 +229,7 @@ async function main(){
   race.pace = (opts.pace && resolvePace(opts.pace)) || race.pace || auto.pace;
 
   const rows = E.analyze(race, parsed.horses);
-  const {bets, value, dropped} = E.buildBets(rows, race.budget);
+  const {bets, value, dropped, grade, spend} = E.buildBets(rows, race.budget);
   const verdict = E.verdictOf(rows);
 
   /* ---- JSON出力 ---- */
@@ -278,6 +278,11 @@ async function main(){
     console.log(`${C.dim}情報量 ${infoPct}% ／ 市場の重み ${(rows.marketWeight*100).toFixed(0)}%${C.r}`);
   }
   console.log("");
+  // このレースを買うべきかどうかを最初に出す
+  const gcol = grade.grade === "skip" ? C.red : grade.grade === "strong" ? C.green : C.yellow;
+  console.log(`${C.b}${gcol}【${grade.title}】${C.r} ${grade.reason}`);
+  console.log(`${C.dim}  ${grade.advice}${C.r}`);
+  console.log("");
   console.log(`${C.b}${verdict.title}${C.r}  ${C.dim}${verdict.sub}${C.r}`);
   if(value){
     console.log(`${C.red}妙味${C.r} ${value.h.num}番 ${value.h.name}` +
@@ -306,15 +311,25 @@ async function main(){
   });
 
   // 買い目
-  const spent = bets.reduce((s, x) => s + x.total, 0);
   console.log("");
-  console.log(`${C.b}${C.green}推奨買い目${C.r} ${C.dim}予算 ${yen(race.budget)} / 使用 ${yen(spent)}${C.r}`);
-  bets.forEach(b => {
-    console.log(`  ${C.b}${padEnd(b.name, 18)}${C.r}${C.dim}${b.combos.length}点 × ${yen(b.unit)} = ${yen(b.total)}${C.r}`);
-    console.log(`    ${b.combos.join("  ")}`);
-  });
-  if(dropped && dropped.length){
-    console.log(`  ${C.dim}（予算内に収めるため除外: ${dropped.join("・")}）${C.r}`);
+  if(!bets.length){
+    console.log(`${C.b}${C.red}推奨買い目 なし${C.r} ${C.dim}このレースは見送りです（予算 ${yen(race.budget)} は使いません）${C.r}`);
+  }else{
+    const spent = bets.reduce((s, x) => s + x.total, 0);
+    console.log(`${C.b}${C.green}推奨買い目${C.r} ${C.dim}予算 ${yen(race.budget)} / 投入 ${yen(spend)} / 使用 ${yen(spent)}${C.r}`);
+    bets.forEach(b => {
+      console.log(`  ${C.b}${padEnd(b.name, 18)}${C.r}${C.dim}${b.combos.length}点 × ${yen(b.unit)} = ${yen(b.total)}${C.r}`);
+      console.log(`    ${b.combos.join("  ")}`);
+      const ev = b.evKnown != null
+        ? `期待値 ${b.evKnown.toFixed(2)}（オッズが分かっているので計算済み）`
+        : `必要オッズ ${b.needOdds.toFixed(1)}倍 以上（これ未満なら見送り）`;
+      console.log(`    ${C.dim}的中 ${(b.hit*100).toFixed(1)}% ／ ${ev}${C.r}`);
+    });
+    if(dropped && dropped.length){
+      console.log(`  ${C.dim}（予算内に収めるため除外: ${dropped.join("・")}）${C.r}`);
+    }
+    console.log(`  ${C.dim}馬連・ワイド・三連複はオッズを入力していないため期待値を計算できません。`);
+    console.log(`  ${C.dim}買う前に、実際のオッズが上の「必要オッズ」以上かを確かめてください。${C.r}`);
   }
 
   // 警告

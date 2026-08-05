@@ -108,10 +108,13 @@
   }
 
   /* ---------- 保存用のレコードを組み立てる ---------- */
-  function makeRecord(race, rows, bets, now){
+  function makeRecord(race, rows, bets, now, grade){
     return {
       id: "r" + now,
       savedAt: now,
+      // 「買うべきレースだったか」もあとから振り返れるように残す
+      grade: grade ? {grade: grade.grade, title: grade.title,
+                      bestEv: Math.round(grade.bestEv * 100) / 100} : null,
       race: {
         track: race.track, surface: race.surface, course: race.course,
         distance: race.distance, condition: race.condition,

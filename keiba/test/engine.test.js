@@ -147,16 +147,23 @@ t("モデル勝率の広がりが市場と釣り合う（極端な人気薄を�
     `モデルの広がり ${sd.toFixed(2)} が市場 ${sm.toFixed(2)} と釣り合っていない`);
 });
 
+t("判定は市場比ではなく期待値で行う", () => {
+  /* 市場比 1.20 倍は、控除率を戻すと期待値ちょうど1.0前後でしかない。
+     「やっと元が取れる」水準を妙味と呼ぶと、買うほど負ける。 */
+  assert.ok(!E.isValue({ev: 1.00, prob: 0.18, market: 0.15}),
+    "期待値1.00を妙味にしている");
+  assert.ok(E.isValue({ev: 1.35, prob: 0.18, market: 0.12}),
+    "期待値1.35を妙味にしていない");
+});
+
 t("比率が大きくても勝率の絶対差が小さければ妙味にしない", () => {
-  assert.ok(!E.isValue({edge: 2.0, prob: 0.004, market: 0.002}),
+  assert.ok(!E.isValue({ev: 2.0, prob: 0.004, market: 0.002}),
     "0.2%→0.4% を妙味と判定している");
-  assert.ok(E.isValue({edge: 1.5, prob: 0.18, market: 0.12}),
-    "12%→18% を妙味と判定していない");
 });
 
 t("過剰人気も同じ基準で判定する", () => {
-  assert.ok(!E.isOverbet({edge: 0.5, prob: 0.002, market: 0.004}), "極小の差で過剰人気にしている");
-  assert.ok(E.isOverbet({edge: 0.7, prob: 0.14, market: 0.20}), "20%→14% を過剰人気にしていない");
+  assert.ok(!E.isOverbet({ev: 0.5, prob: 0.002, market: 0.004}), "極小の差で過剰人気にしている");
+  assert.ok(E.isOverbet({ev: 0.65, prob: 0.14, market: 0.20}), "期待値0.65を過剰人気にしていない");
 });
 
 console.log("\n■ 勝率と期待値");
@@ -232,8 +239,11 @@ t("入力が既定値だけなら市場そのものになり、妙味を出さ�
   assert.ok(rows.marketWeight > 0.97, "市場の重みが足りない: " + rows.marketWeight);
   rows.forEach(x => assert.ok(Math.abs(x.edge - 1) < 0.05,
     `${x.h.num}番の市場比が ${x.edge.toFixed(2)}（材料がないので1.00付近のはず）`));
-  const {value} = E.buildBets(rows, 5000);
-  assert.strictEqual(value, undefined, "根拠のない妙味馬が出ている: " + (value && value.h.num));
+  const {value, bets, grade} = E.buildBets(rows, 5000);
+  assert.ok(!value, "根拠のない妙味馬が出ている: " + (value && value.h.num));
+  // さらに、材料がない状態ではそもそも買わない
+  assert.strictEqual(grade.grade, "skip", "材料なしで買おうとしている");
+  assert.strictEqual(bets.length, 0, "材料なしで買い目を出している");
 });
 
 t("材料が揃えばモデルの評価が反映される", () => {
@@ -265,13 +275,26 @@ t("情報量が増えるほど市場比の振れ幅が大きくなる", () => {
 
 console.log("\n■ 買い目");
 
+/* 買える状態のレース。近走・脚質・騎手が入っていて、
+   モデルの評価が市場と食い違うため期待値プラスの馬が生まれる。 */
+function lively(n){
+  const hs = [];
+  for(let i=0;i<n;i++) hs.push(horse(i+1, {
+    odds: 2 + i*4,
+    last1:((i*3)%8)+1, last2:((i*5)%8)+1, last3:((i*7)%8)+1,
+    jockey:(i%5)+1, training:((i+2)%5)+1,
+    style:["nige","senko","sashi","oikomi"][i%4]
+  }));
+  return hs;
+}
+
 t("どの予算でも超過しない（少額なら券種を減らす）", () => {
   [100, 300, 600, 1000, 2000, 5000, 30000].forEach(budget => {
-    const hs = field(10).map((h,i)=>Object.assign(h,{odds:2+i*4}));
-    const rows = E.analyze(race(), hs);
-    const {bets} = E.buildBets(rows, budget);
+    const rows = E.analyze(race(), lively(10));
+    const {bets, spend} = E.buildBets(rows, budget);
     const spent = bets.reduce((s,x)=>s+x.total, 0);
     assert.ok(spent <= budget, `予算 ${budget} に対し ${spent} を使用`);
+    assert.ok(spent <= spend, `投入予定 ${spend} を超えて ${spent} を使用`);
     assert.ok(bets.length >= 1, `予算 ${budget} で買い目が空`);
     bets.forEach(x => assert.ok(x.unit % 100 === 0 && x.unit >= 100,
       `${x.name} の1点単価が ${x.unit}`));
@@ -279,28 +302,152 @@ t("どの予算でも超過しない（少額なら券種を減らす）", () =>
 });
 
 t("予算を削っても単勝は最後まで残る", () => {
-  const hs = field(10).map((h,i)=>Object.assign(h,{odds:2+i*4}));
-  const rows = E.analyze(race(), hs);
+  const rows = E.analyze(race(), lively(10));
   const {bets, dropped} = E.buildBets(rows, 200);
   assert.ok(bets.some(b => b.name === "単勝"), "単勝が残っていない");
   assert.ok(dropped.length > 0, "削られた券種が記録されていない");
 });
 
-t("3頭立てでも破綻せず、三連複は出さない", () => {
-  const hs = [horse(1,{odds:2}), horse(2,{odds:4}), horse(3,{odds:8})];
-  const rows = E.analyze(race(), hs);
+t("3頭立てでは発売されない券種を出さない", () => {
+  // 複勝は4頭以下、ワイド・三連複は3頭以下では発売されない
+  const rows = E.analyze(race(), lively(3));
   const {bets} = E.buildBets(rows, 5000);
   assert.ok(bets.length > 0, "買い目が空");
-  assert.ok(!bets.some(b => b.name.indexOf("三連複") >= 0), "3頭で三連複が出ている");
+  ["三連複", "ワイド", "複勝"].forEach(k =>
+    assert.ok(!bets.some(b => b.name.indexOf(k) >= 0), `3頭で${k}が出ている`));
 });
 
 t("買い目の馬番はすべて出走馬に含まれる", () => {
-  const hs = field(12).map((h,i)=>Object.assign(h,{odds:2+i*3, last1:(i%8)+1}));
+  const hs = lively(12);
   const rows = E.analyze(race({track:"kawasaki", surface:"dirt"}), hs);
   const {bets} = E.buildBets(rows, 10000);
   const valid = new Set(hs.map(h=>String(h.num)));
+  assert.ok(bets.length > 0);
   bets.forEach(b => b.combos.forEach(c =>
     c.split("-").forEach(x => assert.ok(valid.has(x), `不正な馬番 ${x} in ${c}`))));
+});
+
+console.log("\n■ 買うべきレースの見極め");
+
+t("材料が乏しければ買わない", () => {
+  const rows = E.analyze(race(), field(10).map((h,i)=>Object.assign(h,{odds:2+i*4})));
+  const {grade, bets} = E.buildBets(rows, 5000);
+  assert.strictEqual(grade.grade, "skip", "情報量が低いのに買おうとしている");
+  assert.strictEqual(bets.length, 0);
+  assert.strictEqual(grade.stakeRatio, 0);
+  assert.ok(/情報量/.test(grade.reason), "理由に情報量が出ていない: " + grade.reason);
+});
+
+t("期待値1.0を超える馬がいなければ買わない", () => {
+  /* モデルが市場とほぼ一致するレース。控除率のぶん、
+     どの馬を買っても期待値は1を割る。 */
+  const hs = field(8).map((h,i) => Object.assign(h, {
+    odds: [2,3,4,6,9,14,25,50][i],
+    last1: i+1, last2: i+1, last3: i+1,          // 人気順どおりの成績
+    jockey: Math.max(1, 5-i), training: Math.max(1, 5-i),
+    style: ["nige","senko","sashi","oikomi"][i%4]
+  }));
+  const rows = E.analyze(race(), hs);
+  const {grade, bets} = E.buildBets(rows, 5000);
+  assert.ok(rows.infoLevel >= 0.35, "情報量の方で弾かれている: " + rows.infoLevel);
+  assert.ok(rows.every(x => x.ev < 1.0 || x.prob < 0.04),
+    "期待値プラスの馬がいる: " + rows.map(x=>x.ev.toFixed(2)).join(","));
+  assert.strictEqual(grade.grade, "skip");
+  assert.strictEqual(bets.length, 0, "見送りなのに買い目が出ている");
+});
+
+t("期待値の大きさで投入額を変える", () => {
+  const rows = E.analyze(race(), lively(10));
+  const {grade, spend} = E.buildBets(rows, 10000);
+  assert.ok(["small","normal","strong"].indexOf(grade.grade) >= 0, grade.grade);
+  assert.strictEqual(spend, Math.floor(10000 * grade.stakeRatio / 100) * 100);
+  assert.ok(grade.stakeRatio <= 1 && grade.stakeRatio > 0);
+});
+
+t("単勝は期待値が1.0以上の馬にしか買わない", () => {
+  const rows = E.analyze(race(), lively(12));
+  const {bets} = E.buildBets(rows, 20000);
+  const byNum = {};
+  rows.forEach(x => { byNum[x.h.num] = x; });
+  bets.filter(b => b.name.indexOf("単勝") === 0).forEach(b => {
+    const x = byNum[Number(b.combos[0])];
+    assert.ok(x.ev >= 1.0, `${x.h.num}番の期待値 ${x.ev.toFixed(2)} で単勝を買っている`);
+    assert.ok(Math.abs(b.evKnown - x.ev) < 1e-9, "単勝に期待値が付いていない");
+  });
+});
+
+t("軸は上位3頭のうち期待値がいちばん高い馬にする", () => {
+  const rows = E.analyze(race(), lively(12));
+  const {bets} = E.buildBets(rows, 20000);
+  const nagashi = bets.find(b => b.name === "馬連 流し");
+  assert.ok(nagashi, "馬連 流しが無い");
+  const axis = Number(nagashi.combos[0].split("-")[0]);
+  const top3 = rows.slice(0, 3);
+  const bestEv = Math.max.apply(null, top3.map(x => x.ev));
+  const chosen = top3.find(x => x.h.num === axis);
+  assert.ok(chosen, `軸 ${axis}番 が上位3頭にいない`);
+  assert.ok(Math.abs(chosen.ev - bestEv) < 1e-9,
+    `軸 ${axis}番 の期待値 ${chosen.ev.toFixed(2)} より高い馬が上位にいる（${bestEv.toFixed(2)}）`);
+});
+
+console.log("\n■ 的中確率と必要オッズ");
+
+t("複勝率・連対率は勝率以上で、1を超えない", () => {
+  const rows = E.analyze(race(), lively(12));
+  const p = rows.map(x => x.prob);
+  p.forEach((_, i) => {
+    const t1 = E.topKProb(p, i, 1), t2 = E.topKProb(p, i, 2), t3 = E.topKProb(p, i, 3);
+    assert.ok(Math.abs(t1 - p[i]) < 1e-12, "1着以内が勝率と違う");
+    assert.ok(t2 >= t1 - 1e-12 && t3 >= t2 - 1e-12, `単調でない: ${t1} ${t2} ${t3}`);
+    assert.ok(t3 <= 1 + 1e-9, "確率が1を超えた: " + t3);
+  });
+  // 全馬の「k着以内」の合計は k になる
+  [1,2,3].forEach(k => {
+    const sum = p.map((_, i) => E.topKProb(p, i, k)).reduce((a,b)=>a+b, 0);
+    assert.ok(Math.abs(sum - k) < 1e-6, `${k}着以内の合計が ${sum.toFixed(4)}（${k} のはず）`);
+  });
+});
+
+t("馬連・ワイド・三連複の的中確率が整合する", () => {
+  const rows = E.analyze(race(), lively(8));
+  const p = rows.map(x => x.prob);
+  // 全ペアの馬連確率の合計は1（1・2着の組は必ずどれか1つ）
+  let q = 0;
+  for(let i=0;i<p.length;i++) for(let j=i+1;j<p.length;j++) q += E.quinellaProb(p, i, j);
+  assert.ok(Math.abs(q - 1) < 1e-6, "馬連の合計が " + q.toFixed(4));
+  // 全3頭組の三連複確率の合計も1
+  let tr = 0;
+  for(let i=0;i<p.length;i++) for(let j=i+1;j<p.length;j++) for(let k=j+1;k<p.length;k++)
+    tr += E.trioProb(p, i, j, k);
+  assert.ok(Math.abs(tr - 1) < 1e-6, "三連複の合計が " + tr.toFixed(4));
+  // ワイドは馬連より当たりやすい
+  for(let i=0;i<p.length;i++) for(let j=i+1;j<p.length;j++)
+    assert.ok(E.wideProb(p,i,j) >= E.quinellaProb(p,i,j) - 1e-12,
+      `ワイドが馬連を下回った ${i},${j}`);
+});
+
+t("オッズが分からない券種には必要オッズを付ける", () => {
+  const rows = E.analyze(race(), lively(12));
+  const {bets} = E.buildBets(rows, 20000);
+  bets.forEach(b => {
+    assert.ok(b.hit > 0 && b.hit <= 1, `${b.name} の的中確率が ${b.hit}`);
+    if(b.evKnown == null){
+      // n点を同額で買うときの損益分岐は「点数 ÷ 的中確率」
+      assert.ok(Math.abs(b.needOdds - b.combos.length / b.hit) < 1e-9,
+        `${b.name} の必要オッズが合わない`);
+      assert.ok(b.needOdds > 1, `${b.name} の必要オッズが ${b.needOdds}`);
+    }
+  });
+  assert.ok(bets.some(b => b.evKnown != null), "期待値が計算できる券種が無い");
+  assert.ok(bets.some(b => b.evKnown == null), "必要オッズを出す券種が無い");
+});
+
+t("複勝は5頭以上で2着まで、8頭以上で3着まで", () => {
+  assert.strictEqual(E.placePositions(4), 0);
+  assert.strictEqual(E.placePositions(5), 2);
+  assert.strictEqual(E.placePositions(7), 2);
+  assert.strictEqual(E.placePositions(8), 3);
+  assert.strictEqual(E.placePositions(18), 3);
 });
 
 console.log("\n■ ペース自動判定");
