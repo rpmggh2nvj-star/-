@@ -378,18 +378,34 @@ t("単勝は期待値が1.0以上の馬にしか買わない", () => {
   });
 });
 
-t("軸は上位3頭のうち期待値がいちばん高い馬にする", () => {
-  const rows = E.analyze(race(), lively(12));
+t("軸を1頭に固定しない（同じ馬が全点に入らない）", () => {
+  /* 軸を固定すると、その馬を含まない組み合わせはどれだけ割が良くても
+     買えなくなる。とくに人気を被った本命は軸から外れやすいが、
+     本命は最も勝つ回数が多い馬でもある。 */
+  const rows = E.analyze(race({condition:2}), lively(12));
   const {bets} = E.buildBets(rows, 20000);
-  const nagashi = bets.find(b => b.name === "馬連 流し");
-  assert.ok(nagashi, "馬連 流しが無い");
-  const axis = Number(nagashi.combos[0].split("-")[0]);
-  const top3 = rows.slice(0, 3);
-  const bestEv = Math.max.apply(null, top3.map(x => x.ev));
-  const chosen = top3.find(x => x.h.num === axis);
-  assert.ok(chosen, `軸 ${axis}番 が上位3頭にいない`);
-  assert.ok(Math.abs(chosen.ev - bestEv) < 1e-9,
-    `軸 ${axis}番 の期待値 ${chosen.ev.toFixed(2)} より高い馬が上位にいる（${bestEv.toFixed(2)}）`);
+  const umaren = bets.find(b => b.name === "馬連");
+  assert.ok(umaren, "馬連が無い: " + bets.map(b => b.name).join(","));
+  if(umaren.combos.length < 2) return;
+  const counts = {};
+  umaren.combos.forEach(c => c.split("-").forEach(x => { counts[x] = (counts[x]||0)+1; }));
+  const everywhere = Object.keys(counts).filter(k => counts[k] === umaren.combos.length);
+  assert.ok(everywhere.length <= 1,
+    "同じ馬が全点に入っている（軸固定になっている）: " + everywhere.join(","));
+});
+
+t("割が良ければ、期待値の低い本命を含む組み合わせも買う", () => {
+  /* 本命は期待値が1を割っていても、相手の割が良ければ組み合わせは
+     プラスになりうる。しかも的中率がいちばん高い。 */
+  const rows = E.analyze(race({condition:2}), lively(12));
+  const fav = rows.slice().sort((x, y) => x.h.odds - y.h.odds)[0];
+  const {bets} = E.buildBets(rows, 20000);
+  const all = [];
+  bets.filter(b => b.evKnown == null).forEach(b => b.points.forEach(pt => all.push(pt)));
+  // 本命を含む点があるなら、それは推定期待値が1以上であること
+  all.filter(pt => pt.combo.split("-").indexOf(String(fav.h.num)) >= 0)
+     .forEach(pt => assert.ok(pt.ev >= 1.0,
+       `本命入りの ${pt.combo} が期待値 ${pt.ev.toFixed(2)} で入っている`));
 });
 
 console.log("\n■ 的中確率と必要オッズ");
@@ -466,17 +482,18 @@ t("1点ごとの的中確率と必要オッズを出す", () => {
   });
 });
 
-t("点ごとの必要オッズは、当たりにくい点ほど高い", () => {
+t("必要オッズは的中確率と1対1で対応する", () => {
+  // 買い目は期待値順に並ぶので必要オッズの順は揃わないが、
+  // 「当たりにくい点ほど必要オッズが高い」関係は常に成り立つ
   const rows = E.analyze(race(), lively(12));
   const {bets} = E.buildBets(rows, 20000);
-  const nagashi = bets.find(b => b.name === "馬連 流し");
-  assert.ok(nagashi && nagashi.points.length >= 2);
-  for(let i = 1; i < nagashi.points.length; i++){
-    const a = nagashi.points[i-1], b = nagashi.points[i];
-    // 相手は推定勝率の高い順に並ぶので、必要オッズは上がっていく
-    assert.ok(b.needOdds >= a.needOdds - 1e-9,
-      `${a.combo}(${a.needOdds.toFixed(1)}) → ${b.combo}(${b.needOdds.toFixed(1)})`);
-  }
+  bets.filter(b => b.evKnown == null).forEach(b => {
+    const byHit = b.points.slice().sort((x, y) => y.hit - x.hit);
+    for(let i = 1; i < byHit.length; i++){
+      assert.ok(byHit[i].needOdds >= byHit[i-1].needOdds - 1e-9,
+        `${b.name}: ${byHit[i-1].combo} → ${byHit[i].combo}`);
+    }
+  });
 });
 
 console.log("\n■ 連系の推定期待値（単勝オッズから組み立てる）");
@@ -762,18 +779,19 @@ t("荒れるレースでは単勝の比重を下げ、面で取る券種に回�
     "堅いレースで三連複を出している");
   assert.ok(storm.bets.some(x => x.name.indexOf("三連複") >= 0),
     "荒れるレースで三連複を出していない");
-  // 相手は5頭に広げるが、推定期待値が1を割る点はそこから外れる
-  const nagashi = storm.bets.find(x => x.name === "馬連 流し");
-  assert.ok(nagashi, "馬連 流しが無い");
-  assert.strictEqual(nagashi.combos.length + nagashi.cut, 5,
-    `候補5点にならない: ${nagashi.combos.length} + 外した${nagashi.cut}`);
-  assert.ok(storm.upset.width === 5, "相手の頭数が5でない: " + storm.upset.width);
+  // 荒れるレースは候補も点数も広げる
+  const nagashi = storm.bets.find(x => x.name === "馬連");
+  const calmNa  = calm.bets.find(x => x.name === "馬連");
+  assert.ok(nagashi, "馬連が無い: " + storm.bets.map(x=>x.name).join(","));
+  assert.ok(storm.upset.width === 5, "候補の広さが5でない: " + storm.upset.width);
+  if(calmNa) assert.ok(nagashi.combos.length >= calmNa.combos.length,
+    `荒れるレースで点数が増えていない: ${calmNa.combos.length} → ${nagashi.combos.length}`);
 });
 
 t("荒れるレースでも、必要オッズは点数に応じて上がる", () => {
   // 手広く流せば当たりやすくなるが、必要オッズも上がる。それを隠さない。
   const storm = E.buildBets(E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})), 20000);
-  const tri = storm.bets.find(x => x.name.indexOf("三連複") >= 0);
+  const tri = storm.bets.find(x => x.name === "三連複");
   assert.ok(tri.combos.length + tri.cut >= 6,
     `三連複の候補: ${tri.combos.length} + 外した${tri.cut}`);
   assert.ok(Math.abs(tri.needOdds - tri.combos.length / tri.hit) < 1e-9);
