@@ -186,6 +186,72 @@
     </details>
   </section>
 
+  <!-- データの保存 -->
+  <section class="panel" id="dataPanel">
+    <div class="panel-head">
+      <h2>データの保存</h2>
+      <span class="hint" id="dataCount"></span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnDataToggle">開く</button>
+    </div>
+    <div id="dataBody" hidden>
+      <p class="hint" style="margin:0 0 12px">
+        予想の記録・騎手評価は、ふだんはこの端末の中にしかありません。
+        ブラウザの履歴を消す、端末を替える、といったときに失われます。
+        <b>端末の外へ保存しておくと、あとから戻せます。</b>
+      </p>
+
+      <div class="data-row">
+        <div class="data-k">保存先</div>
+        <div class="data-v" id="linkState">まだ決めていません</div>
+      </div>
+      <div class="btn-row" style="margin:10px 0 4px">
+        <button type="button" class="primary" id="btnBackupSave">保存先を選んで保存</button>
+        <button type="button" class="ghost" id="btnBackupNow" hidden>いまの内容で上書き保存</button>
+        <button type="button" class="ghost" id="btnBackupUnlink" hidden>保存先を解除</button>
+      </div>
+      <p class="hint" id="linkNote" style="margin:0 0 14px"></p>
+
+      <div class="btn-row" style="margin:0 0 14px">
+        <button type="button" class="ghost" id="btnBackupDownload">ファイルに書き出す</button>
+        <button type="button" class="ghost" id="btnBackupShare" hidden>他のアプリへ送る</button>
+        <button type="button" class="ghost" id="btnBackupCopy">文字としてコピー</button>
+      </div>
+
+      <div class="data-restore">
+        <div class="data-k" style="margin-bottom:6px">戻す</div>
+        <input type="file" id="backupFile" accept=".json,application/json">
+        <textarea id="backupText" rows="3" placeholder="コピーしたバックアップの文字を貼り付けることもできます"></textarea>
+        <label class="chk">
+          <input type="checkbox" id="restoreReplace">
+          いまのデータを消して、バックアップの内容だけにする
+        </label>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnRestoreRun">読み込む</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0">
+          既定では<b>足すだけ</b>です。いまの記録は消えません。同じレースの記録が
+          両方にある場合は、着順が入っている方を残します。
+        </p>
+      </div>
+
+      <div class="import-result" id="dataResult" hidden></div>
+
+      <details class="guide">
+        <summary>どこに保存できますか</summary>
+        <div class="hint" style="margin:8px 0 0">
+          <b>「保存先を選んで保存」</b>が使える端末（Android の Chrome、パソコン）では、
+          Googleドライブや端末のフォルダを保存先に指定できます。一度決めれば、
+          以後は<b>同じファイルへ自動で上書き</b>されます。<br>
+          <b>iPhone / iPad</b> では「他のアプリへ送る」から、ファイルApp・iCloudドライブ・
+          Googleドライブ・メールなどへ渡せます。<br>
+          うまくいかない場合は「文字としてコピー」でメモアプリに貼り付けても構いません。
+          戻すときは、その文字を上の欄に貼り付けてください。
+        </div>
+      </details>
+    </div>
+  </section>
+
   <!-- 予想の記録 -->
   <section class="panel" id="historyPanel">
     <div class="panel-head">

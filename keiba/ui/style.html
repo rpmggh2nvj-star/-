@@ -278,6 +278,27 @@ button.danger{color:var(--red);border-color:var(--red-line);background:var(--red
 .upset .u-reasons li,.upset .u-advice{color:var(--ink);}
 .upset .u-reasons li{color:var(--ink-soft);}
 
+/* データの保存 */
+.data-row{
+  display:flex;align-items:baseline;gap:10px;
+  border:1px solid var(--line);border-radius:10px;background:var(--field);padding:9px 12px;
+}
+.data-k{font-size:.72rem;color:var(--ink-soft);font-weight:700;letter-spacing:.04em;white-space:nowrap;}
+.data-v{font-size:.82rem;word-break:break-all;}
+.data-v.linked{color:var(--turf);font-weight:700;}
+.data-restore{
+  border:1px solid var(--line);border-radius:10px;background:var(--field);
+  padding:12px;display:grid;gap:8px;
+}
+.data-restore textarea{
+  font-family:var(--mono);font-size:.78rem;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;width:100%;resize:vertical;line-height:1.5;
+}
+.data-restore input[type=file]{font-size:.8rem;padding:6px;background:transparent;border:1px dashed var(--line);}
+label.chk{display:flex;align-items:center;gap:6px;font-size:.76rem;color:var(--ink-soft);cursor:pointer;}
+label.chk input{width:16px;height:16px;accent-color:var(--red);}
+
 /* 荒れ度ごとの成績 */
 .upset-stats{display:grid;gap:6px;margin:10px 0 4px;}
 .us-row{

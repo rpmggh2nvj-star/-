@@ -978,8 +978,319 @@ $("btnSaveRace").addEventListener("click", () => {
   if(!saveHistory(history)) return;
   $("saveNote").textContent = "記録しました。下の「予想の記録」から着順を入れられます。";
   renderHistory();
+  renderDataPanel();
+  autoBackup();
   $("historyPanel").scrollIntoView({behavior:"smooth", block:"start"});
 });
 
 renderGradeGuide();
 renderHistory();
+
+/* ============================================================
+   データの保存（端末の外へ）
+   ------------------------------------------------------------
+   予想の記録も騎手評価も、ふだんは localStorage にしかない。
+   履歴を消す・端末を替える・プライベートブラウズで開く——
+   どれでも消える。貯めるほど価値が出るデータなので持ち出せるようにする。
+
+   保存の手段は端末によって使えるものが違うため、3段構えにする。
+     1) ファイルを直接指定して上書き保存（File System Access API）
+        Android の Chrome・パソコン。Googleドライブ等のフォルダも選べる。
+     2) 他のアプリへ送る（Web Share API）
+        iPhone / iPad。ファイルApp・iCloud・メールなどへ渡せる。
+     3) ダウンロード / 文字としてコピー
+        どこでも動く最後の手段。
+   ============================================================ */
+const BK = window.TurfBackup;
+const canPickFile = typeof window.showSaveFilePicker === "function";
+const canShareFiles = !!(navigator.canShare && navigator.share);
+
+/* 選んだ保存先（FileSystemFileHandle）は、次回も同じファイルへ書けるように覚えておく。
+   ハンドルは JSON にできないので localStorage ではなく IndexedDB に置く。 */
+const IDB_NAME = "turf-logic", IDB_STORE = "handles", HANDLE_KEY = "backup";
+
+function idb(){
+  return new Promise((resolve, reject) => {
+    if(!window.indexedDB) return reject(new Error("indexedDB がありません"));
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if(!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbPut(key, val){
+  return idb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(val, key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  })).catch(() => false);
+}
+function idbGet(key){
+  return idb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const r = tx.objectStore(IDB_STORE).get(key);
+    r.onsuccess = () => resolve(r.result || null);
+    r.onerror = () => reject(r.error);
+  })).catch(() => null);
+}
+function idbDel(key){
+  return idb().then(db => new Promise(resolve => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = () => resolve(true);
+  })).catch(() => false);
+}
+
+let backupHandle = null;
+
+/* ---------- いまの端末のデータを集める / 書き戻す ---------- */
+function collectStores(){
+  const read = (key, fallback) => {
+    try{ const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); }
+    catch(e){ return fallback; }
+  };
+  return {
+    history: history,
+    jockeys: jockeyRatings,
+    jockeyNames: knownJockeyNames,
+    state: read(STORAGE_KEY, null)
+  };
+}
+
+function applyStores(s){
+  history = H.normalize(s.history || []);
+  jockeyRatings = s.jockeys || {};
+  knownJockeyNames = s.jockeyNames || [];
+  saveHistory(history);
+  saveJockeys(jockeyRatings);
+  try{ localStorage.setItem(JOCKEY_NAMES_KEY, JSON.stringify(knownJockeyNames)); }catch(e){}
+  if(s.state){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s.state)); }catch(e){}
+  }
+  renderHistory();
+  renderJockeys();
+}
+
+function backupJson(){
+  return JSON.stringify(BK.build(collectStores(), Date.now()), null, 1);
+}
+
+/* ---------- 表示 ---------- */
+function dataResult(ok, title, lines){
+  const box = $("dataResult");
+  box.hidden = false;
+  box.className = "import-result " + (ok ? "ok" : "ng");
+  box.innerHTML = `<b>${escapeHtml(title)}</b>` +
+    ((lines && lines.length) ? "<ul>" + lines.map(l => `<li>${escapeHtml(l)}</li>`).join("") + "</ul>" : "");
+}
+
+function renderDataPanel(){
+  const s = collectStores();
+  const n = (s.history || []).length;
+  const j = Object.keys(s.jockeys || {}).length;
+  $("dataCount").textContent = n || j ? `記録 ${n}件 ・ 騎手評価 ${j}人` : "まだデータがありません";
+
+  const linked = !!backupHandle;
+  $("linkState").textContent = linked ? backupHandle.name : "まだ決めていません";
+  $("linkState").className = "data-v" + (linked ? " linked" : "");
+  $("btnBackupNow").hidden = !linked;
+  $("btnBackupUnlink").hidden = !linked;
+  $("btnBackupSave").textContent = linked ? "保存先を選び直す" : "保存先を選んで保存";
+  $("btnBackupSave").hidden = !canPickFile;
+  $("btnBackupShare").hidden = !canShareFiles;
+  $("linkNote").textContent = !canPickFile
+    ? "この端末では保存先を指定できません。下の「ファイルに書き出す」か「他のアプリへ送る」を使ってください。"
+    : linked
+      ? "予想を記録するたびに、このファイルへ自動で上書きします。"
+      : "Googleドライブや端末のフォルダを指定できます。一度決めれば以後は自動で上書きされます。";
+}
+
+/* ---------- 保存先を選ぶ ---------- */
+async function chooseBackupFile(){
+  try{
+    const h = await window.showSaveFilePicker({
+      suggestedName: BK.fileName(Date.now()),
+      types: [{description: "Turf Logic のバックアップ", accept: {"application/json": [".json"]}}]
+    });
+    backupHandle = h;
+    await idbPut(HANDLE_KEY, h);
+    const ok = await writeBackup();
+    renderDataPanel();
+    if(ok) dataResult(true, `${h.name} に保存しました。`,
+      ["これ以降、予想を記録するたびに同じファイルへ自動で上書きします。",
+       "端末を替えるときは、このファイルを新しい端末で読み込んでください。"]);
+  }catch(e){
+    if(e && e.name === "AbortError") return;          // 利用者が選択をやめただけ
+    dataResult(false, "保存先を指定できませんでした。", [String(e && e.message || e),
+      "この端末では使えない場合があります。「ファイルに書き出す」をお試しください。"]);
+  }
+}
+
+async function writeBackup(){
+  if(!backupHandle) return false;
+  try{
+    if(backupHandle.queryPermission){
+      let p = await backupHandle.queryPermission({mode:"readwrite"});
+      if(p !== "granted" && backupHandle.requestPermission){
+        p = await backupHandle.requestPermission({mode:"readwrite"});
+      }
+      if(p !== "granted") return false;
+    }
+    const w = await backupHandle.createWritable();
+    await w.write(backupJson());
+    await w.close();
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+/* 記録を保存したあとに、保存先が決まっていれば自動で書き出す。
+   ここで失敗しても予想の記録そのものは端末に残っているので、警告だけ出す。 */
+async function autoBackup(){
+  if(!backupHandle) return;
+  const ok = await writeBackup();
+  $("saveNote").textContent += ok
+    ? `（${backupHandle.name} にも保存しました）`
+    : "（バックアップ先に書き込めませんでした。データの保存から選び直してください）";
+}
+
+/* ---------- 書き出しの他の手段 ---------- */
+function downloadBackup(){
+  const blob = new Blob([backupJson()], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = BK.fileName(Date.now());
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  dataResult(true, "ファイルに書き出しました。", [
+    "端末のダウンロード先に保存されています。クラウドやパソコンへ移しておくと安全です。"
+  ]);
+}
+
+async function shareBackup(){
+  try{
+    const name = BK.fileName(Date.now());
+    const file = new File([backupJson()], name, {type:"application/json"});
+    if(navigator.canShare && !navigator.canShare({files:[file]})){
+      throw new Error("この端末ではファイルを送れません");
+    }
+    await navigator.share({files:[file], title:"Turf Logic のバックアップ"});
+    dataResult(true, "他のアプリへ送りました。", [
+      "ファイルApp・iCloudドライブ・Googleドライブなどに保存しておくと、あとから戻せます。"
+    ]);
+  }catch(e){
+    if(e && e.name === "AbortError") return;
+    dataResult(false, "送れませんでした。", [String(e && e.message || e),
+      "「ファイルに書き出す」または「文字としてコピー」をお試しください。"]);
+  }
+}
+
+async function copyBackup(){
+  const text = backupJson();
+  try{
+    await navigator.clipboard.writeText(text);
+    dataResult(true, "コピーしました。", [
+      "メモアプリなどに貼り付けて保存してください。",
+      "戻すときは、その文字を下の欄に貼り付けて「読み込む」を押します。"
+    ]);
+  }catch(e){
+    $("backupText").value = text;
+    dataResult(false, "自動でコピーできませんでした。", [
+      "下の欄にバックアップの文字を入れました。長押しして全選択・コピーしてください。"
+    ]);
+  }
+}
+
+/* ---------- 戻す ---------- */
+function restoreFrom(text){
+  let obj;
+  try{ obj = JSON.parse(text); }
+  catch(e){
+    dataResult(false, "読み込めませんでした。", ["ファイルの中身がバックアップの形ではありません。"]);
+    return;
+  }
+  const v = BK.validate(obj);
+  if(!v.ok){ dataResult(false, "読み込めませんでした。", [v.reason]); return; }
+
+  const sum = BK.summarize(obj);
+  const replaceMode = $("restoreReplace").checked;
+  if(replaceMode){
+    const now = collectStores();
+    const msg = `いまの端末の記録 ${(now.history||[]).length}件 を消して、` +
+                `バックアップの ${sum.history}件 に置き換えます。よろしいですか？`;
+    if(!confirm(msg)) return;
+  }
+
+  const before = collectStores();
+  const out = replaceMode ? BK.replace(obj) : BK.merge(before, obj, {restoreState: replaceMode});
+  applyStores(out);
+  backupText();
+
+  const lines = [
+    `予想の記録 ${out.history.length}件（${replaceMode ? "置き換え" : "＋" + out.added.history + "件"}）`,
+    `騎手評価 ${Object.keys(out.jockeys).length}人（${replaceMode ? "置き換え" : "＋" + out.added.jockeys + "人"}）`
+  ];
+  if(sum.savedAt) lines.push("バックアップの日時: " + fmtDate(sum.savedAt));
+  if(!replaceMode) lines.push("いまの端末にあった記録は消していません。");
+  dataResult(true, "読み込みました。", lines);
+  renderDataPanel();
+}
+
+function backupText(){
+  $("backupText").value = "";
+  $("backupFile").value = "";
+  $("restoreReplace").checked = false;
+}
+
+/* ---------- 配線 ---------- */
+$("btnDataToggle").addEventListener("click", () => {
+  const b = $("dataBody");
+  b.hidden = !b.hidden;
+  $("btnDataToggle").textContent = b.hidden ? "開く" : "閉じる";
+  if(!b.hidden) renderDataPanel();
+});
+$("btnBackupSave").addEventListener("click", chooseBackupFile);
+$("btnBackupNow").addEventListener("click", async () => {
+  const ok = await writeBackup();
+  dataResult(ok, ok ? `${backupHandle.name} に上書き保存しました。` : "書き込めませんでした。",
+    ok ? [] : ["保存先を選び直してください。ファイルが移動・削除された可能性があります。"]);
+});
+$("btnBackupUnlink").addEventListener("click", async () => {
+  backupHandle = null;
+  await idbDel(HANDLE_KEY);
+  renderDataPanel();
+  dataResult(true, "保存先を解除しました。", ["自動での上書きは行いません。"]);
+});
+$("btnBackupDownload").addEventListener("click", downloadBackup);
+$("btnBackupShare").addEventListener("click", shareBackup);
+$("btnBackupCopy").addEventListener("click", copyBackup);
+
+$("backupFile").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const fr = new FileReader();
+  fr.onload = () => restoreFrom(String(fr.result || ""));
+  fr.onerror = () => dataResult(false, "ファイルを読めませんでした。", []);
+  fr.readAsText(f);
+});
+$("btnRestoreRun").addEventListener("click", () => {
+  const text = $("backupText").value.trim();
+  if(!text){
+    dataResult(false, "読み込むものがありません。", [
+      "上のボタンからバックアップファイルを選ぶか、コピーした文字を貼り付けてください。"
+    ]);
+    return;
+  }
+  restoreFrom(text);
+});
+
+// 前回選んだ保存先を思い出す
+idbGet(HANDLE_KEY).then(h => { if(h){ backupHandle = h; renderDataPanel(); } });
+renderDataPanel();

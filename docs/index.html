@@ -2,9 +2,19 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>Turf Logic｜競馬予想アプリ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1F5C3D">
+<meta name="description" content="出馬表から指数・推定勝率・買い目を出す競馬予想アプリ。データは端末の中だけで扱います。">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<!-- iPhone / iPad はマニフェストを見ないので、個別に指定する -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Turf Logic">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 /* ============================================================
    Turf Logic — トークン定義
@@ -4139,6 +4149,15 @@ $("btnRestoreRun").addEventListener("click", () => {
 idbGet(HANDLE_KEY).then(h => { if(h){ backupHandle = h; renderDataPanel(); } });
 renderDataPanel();
 
+</script>
+<script>
+/* サービスワーカーの登録。https（または localhost）でのみ動く。
+   登録できなくてもアプリ自体は普通に使えるので、失敗しても何もしない。 */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  });
+}
 </script>
 </body>
 </html>
