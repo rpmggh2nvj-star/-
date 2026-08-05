@@ -400,6 +400,43 @@ function polyfill(){
     assert.strictEqual(MK.race.distance, 1000);
   });
 
+  t("期待値がプラスなら、本命を含む組み合わせも買い目に入れる", () => {
+    /* 以前は軸を1頭に固定していたため、人気を被った本命（4番・期待値0.65）を
+       含む組み合わせは、どれだけ割が良くても買えなかった。
+         3-11  的中  2.1%  推定期待値 3.67  ← 買えていた
+         4-11  的中 10.7%  推定期待値 1.53  ← 本命入りのため買えなかった
+       4-11 は期待値がプラスで的中率は5倍ある。捨てる理由がない。 */
+    const r = Object.assign({pace:"mid", condition:0, budget:5000}, MK.race);
+    const rows = E.analyze(r, MK.horses);
+    const fav = rows.slice().sort((x, y) => x.h.odds - y.h.odds)[0];
+    assert.strictEqual(fav.h.num, 4, "1番人気が4番でない");
+    assert.ok(fav.ev < 1.0, "この検証は本命の期待値が1未満であることが前提: " + fav.ev);
+
+    const {bets} = E.buildBets(rows, 5000);
+    const inBets = new Set();
+    bets.forEach(b => b.combos.forEach(c => c.split("-").forEach(x => inBets.add(x))));
+    assert.ok(inBets.has("4"),
+      "期待値プラスの本命入り組み合わせがあるのに買い目へ入っていない: " +
+      [...inBets].join(","));
+
+    // 単勝だけは別。期待値が1を割る馬の単勝は買わない。
+    bets.filter(b => b.name.indexOf("単勝") === 0).forEach(b => {
+      assert.notStrictEqual(b.combos[0], "4", "期待値0.65の本命の単勝を買っている");
+    });
+  });
+
+  t("軸固定をやめたことで、的中確率が上がっている", () => {
+    const r = Object.assign({pace:"mid", condition:0, budget:5000}, MK.race);
+    const {bets} = E.buildBets(E.analyze(r, MK.horses), 5000);
+    const umaren = bets.find(b => b.name === "馬連");
+    assert.ok(umaren, "馬連が無い");
+    // 軸固定のころは 3-5 と 3-11 だけで合計6.1%だった
+    assert.ok(umaren.hit > 0.10,
+      `馬連の合計的中が ${(umaren.hit*100).toFixed(1)}% しかない`);
+    umaren.points.forEach(pt =>
+      assert.ok(pt.ev >= 1.0, `${pt.combo} の推定期待値が ${pt.ev.toFixed(2)}`));
+  });
+
   t("オッズ・斤量・脚質・近走も12頭ぶん揃う", () => {
     assert.deepStrictEqual(MK.horses.map(h => h.odds),
       [82.7, 18.2, 11.1, 1.4, 5.3, 12.2, 43.3, 128.5, 74.9, 179.2, 27.3, 26.3]);

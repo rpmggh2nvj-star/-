@@ -367,6 +367,8 @@ function run(){
   }
 
   const rows = E.analyze(r, hs);
+  // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
+  E.fillBreakEven(r, hs, rows);
   const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
   const verdict = E.verdictOf(rows);
 
@@ -430,6 +432,11 @@ function run(){
     const tags = [`<span class="tag style">${E.STYLE_LABEL[x.h.style]}</span>`];
     if(E.isValue(x)) tags.push(`<span class="tag value">妙味</span>`);
     else if(E.isOverbet(x)) tags.push(`<span class="tag over">過剰人気</span>`);
+    /* 買い下限＝この馬の単勝を買ってよいオッズの下限。
+       締切直前は、この数字とオッズ表示を見比べるだけで判断できる。 */
+    tags.push(x.minOdds == null
+      ? `<span class="tag none">買えない</span>`
+      : `<span class="tag floor${x.h.odds >= x.minOdds ? " on" : ""}">${x.minOdds}倍〜で買い</span>`);
     return `
       <div class="rank${i === 0 ? " top" : ""}">
         <div class="mark ${markCls}" title="${i < E.MARK_NAME.length ? E.MARK_NAME[i] : ""}">${mark || (i+1)}</div>
@@ -463,8 +470,21 @@ function run(){
         <span class="k">的中</span><span class="v">${(x.hit*100).toFixed(1)}%</span>
         ${x.evKnown != null
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
-          : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
+          : x.evEst != null
+            ? `<span class="k">推定期待値</span><span class="v ev-ok">${x.evEst.toFixed(2)}</span>`
+            : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
+      ${(x.points && x.points.length > 1) ? `
+      <table class="pt-table">
+        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
+        ${x.points.map(pt => `<tr>
+          <td class="mono">${escapeHtml(pt.combo)}</td>
+          <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
+          <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
+          <td class="mono need">${pt.ev != null ? pt.ev.toFixed(2) : "—"}</td>
+        </tr>`).join("")}
+      </table>
+      <div class="hint">実際のオッズが必要オッズを下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
       <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
     </div>`).join("")
@@ -473,9 +493,11 @@ function run(){
   const notes = [];
   if(dropped && dropped.length) notes.push(`予算内に収めるため次の券種を除外しました: ${dropped.join("・")}`);
   if(bets.some(x => x.evKnown == null)){
-    notes.push("馬連・ワイド・三連複は、そのオッズを入力していないため期待値を計算できません。" +
-               "買う前に、実際のオッズが「必要オッズ」以上かを確かめてください。下回るなら見送りです。");
+    notes.push("連系の推定期待値は、単勝オッズから市場の組み合わせ確率を組み立てて出しています。" +
+               "実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。");
   }
+  const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
+  if(cutN) notes.push(`推定期待値が1.0を割る ${cutN}点 は、はじめから外してあります。`);
   $("droppedNote").textContent = notes.join(" ");
 
   lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};

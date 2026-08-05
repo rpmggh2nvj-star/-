@@ -363,6 +363,23 @@ label.chk input{width:16px;height:16px;accent-color:var(--red);}
 .tag.value{background:var(--red-tint);color:var(--red);border-color:var(--red-line);}
 .tag.over{background:var(--blue-tint);color:var(--blue);border-color:var(--blue-line);}
 .tag.style{background:var(--paper);color:var(--ink-soft);border-color:var(--line);}
+/* 買い下限オッズ（締切間際はここだけ見ればよい） */
+.tag.floor{
+  background:var(--paper);color:var(--ink-soft);border-color:var(--line);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
+}
+.tag.floor.on{background:var(--turf-tint);color:var(--turf);border-color:var(--turf);}
+.tag.none{background:var(--paper);color:var(--ink-soft);border-color:var(--line);opacity:.7;}
+
+/* 買い目1点ごとの必要オッズ */
+.pt-table{
+  border-collapse:collapse;width:100%;font-size:.72rem;
+  border-top:1px dashed var(--line);margin-top:6px;
+}
+.pt-table th{color:var(--ink-soft);font-weight:700;text-align:left;padding:4px 6px 2px;}
+.pt-table td{padding:2px 6px;border-top:1px solid var(--line);}
+.pt-table td.need{font-weight:700;color:var(--ink);text-align:right;}
+.pt-table th:last-child{text-align:right;}
 
 /* ---------- Bets ---------- */
 .bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
