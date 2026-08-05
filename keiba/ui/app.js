@@ -110,6 +110,43 @@ function saveJockeys(map){
 }
 let jockeyRatings = loadJockeys();
 
+/* 騎手名の辞書。
+   紙面では「小野楓馬」が「小野楓」で切れることがある。切れた名前のままだと
+   同じ騎手が別人として記憶され、評価が引き継がれない。
+   出馬表を読むたびに、そこで見つかった長い表記をこの端末へ貯めておき、
+   次からは切れた名前を伸ばせるようにする。 */
+const JOCKEY_NAMES_KEY = "turf-logic-jockey-names-v1";
+const MAX_JOCKEY_NAMES = 600;
+
+function loadJockeyNames(){
+  try{
+    const a = JSON.parse(localStorage.getItem(JOCKEY_NAMES_KEY) || "[]");
+    return Array.isArray(a) ? a : [];
+  }catch(e){ return []; }
+}
+let knownJockeyNames = loadJockeyNames();
+
+function rememberJockeyNames(list){
+  if(!list || !list.length) return;
+  const seen = new Set(knownJockeyNames);
+  list.forEach(n => { if(n && !seen.has(n)){ seen.add(n); knownJockeyNames.push(n); } });
+  if(knownJockeyNames.length > MAX_JOCKEY_NAMES){
+    knownJockeyNames = knownJockeyNames.slice(-MAX_JOCKEY_NAMES);
+  }
+  try{ localStorage.setItem(JOCKEY_NAMES_KEY, JSON.stringify(knownJockeyNames)); }catch(e){}
+}
+
+// 端末に貯めた表記＋評価済みの騎手名で、切れた名前を伸ばす
+function expandWithMemory(list){
+  const all = knownJockeyNames.concat(Object.keys(jockeyRatings));
+  /* 貯めた中に切れた表記（「落合玄」）が混ざっていることがある。
+     そのままだと「載っている名前」とみなして伸ばせなくなるので、
+     より長い表記が別にあるものは辞書から外す。 */
+  const pool = new Set(all.filter(n =>
+    !all.some(m => m.length > n.length && m.indexOf(n) === 0)));
+  return TurfParse.expandJockeyNames(list, pool);
+}
+
 // 記憶している評価を出走馬へ当てる
 function applyJockeyRatings(){
   horses.forEach(h => {
@@ -220,7 +257,11 @@ function renderHorses(){
         <label class="field">斤量 (kg)
           <input type="number" data-f="kinryo" value="${h.kinryo}" min="48" max="63" step="0.5">
         </label>
-        <label class="field">馬体重増減
+        <label class="field">馬体重 (kg)
+          <input type="number" data-f="weight" value="${h.weight || ""}" min="300" max="700" step="2"
+                 placeholder="${h.prevWeight ? "前走 " + h.prevWeight : "未発表"}">
+        </label>
+        <label class="field">増減 (kg)${h.prevWeight ? `<span class="prevw">前走 ${h.prevWeight}kg</span>` : ""}
           <input type="number" data-f="wdiff" value="${h.wdiff}" step="2">
         </label>
       </div>
@@ -245,6 +286,13 @@ $("horseList").addEventListener("input", e => {
   else {
     h[f] = numOr(e.target.value, 0);
     if(f === "num") card.querySelector(".umaban").textContent = h.num;
+    /* 今回の馬体重を入れたら、前走の値との差を増減へ自動で入れる。
+       前走が分からない馬（＝差が計算できない馬）は増減を触らない。 */
+    if(f === "weight" && h.prevWeight && h.weight >= 300 && h.weight <= 700){
+      h.wdiff = h.weight - h.prevWeight;
+      const w = card.querySelector('[data-f="wdiff"]');
+      if(w) w.value = h.wdiff;
+    }
   }
   if(f === "jockeyName") renderJockeys();
 });
@@ -452,6 +500,13 @@ function importPaste(text, sourceLabel){
   }
 
   if(r.race && Object.keys(r.race).length) applyRace(r.race);
+
+  /* 騎手名の補完。まず今回の紙面に載っていた表記を覚え、
+     そのうえで端末に貯まった表記で、切れたままの名前を伸ばす。 */
+  rememberJockeyNames(r.jockeys);
+  const grewByMemory = expandWithMemory(r.horses);
+  rememberJockeyNames(r.horses.map(h => h.jockeyName).filter(Boolean));
+
   setHorses(r.horses.map(h => { const c = Object.assign({}, h); delete c._got; return c; }));
 
   // 取消馬にはオッズも馬体重も出ないので、読み取り率の分母から外す
@@ -462,6 +517,8 @@ function importPaste(text, sourceLabel){
   if(got("近走着順") || got("脚質")){
     lines.push(`近走着順 ${got("近走着順")}/${n}頭 ・ 脚質 ${got("脚質")}/${n}頭`);
   }
+  if(got("騎手名")) lines.push(`騎手名 ${got("騎手名")}/${n}頭` +
+    (grewByMemory ? `（うち ${grewByMemory}頭 は記憶している表記に直しました）` : ""));
 
   const t = r.race && r.race.track && E.TRACKS[r.race.track];
   const missing = [];

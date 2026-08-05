@@ -344,6 +344,21 @@ function parseNetkeiba(text){
     if(m){ declared = Number(m[1]); break; }
   }
 
+  /* 騎手名の辞書。
+     今回の騎手欄は幅が狭く「小野楓馬」が「小野楓」で切れるが、
+     過去走の欄（アンカー行）には斤量の直前により長い形で載る。
+     全馬ぶん集めておき、あとで切れた名前を伸ばすのに使う。 */
+  const trackNames = new Set(ENGINE ? ENGINE.TRACK_KEYS.map(k => ENGINE.TRACKS[k].name) : []);
+  const knownJockeys = new Set();
+  anchors.forEach(i => {
+    const line = cells[i].join("\t");
+    const re = /([一-龥ぁ-んァ-ヴー]{2,6})\s*(?:4[7-9]|5\d|6[0-3])(?:\.\d)?(?![\d.])/g;
+    let m;
+    while((m = re.exec(line)) !== null){
+      if(isPerson(m[1], trackNames)) knownJockeys.add(m[1]);
+    }
+  });
+
   const horses = [];
   const warnings = [];
   anchors.forEach((i, idx) => {
@@ -487,11 +502,28 @@ function parseNetkeiba(text){
 
   if(horses.length < 2) return null;
   horses.sort((a, b) => a.num - b.num);
+  const grew = expandJockeyNames(horses, knownJockeys);
   warnings.push("netkeibaの馬柱形式として読み取りました。");
+  if(grew) warnings.push(`騎手名が紙面で切れていた ${grew}頭 は、過去走の欄に載っている長い表記に直しました。`);
   if(declared && declared !== horses.length){
     warnings.push(`紙面には ${declared}頭 とありますが ${horses.length}頭 しか読み取れませんでした。読み取り漏れがある可能性があります。`);
   }
-  return {horses, warnings, netkeiba: true};
+  return {horses, warnings, netkeiba: true, jockeys: Array.from(knownJockeys)};
+}
+
+/* 切れた騎手名を、より長い表記に伸ばす。
+   候補がちょうど1つのときだけ直す。2つ以上に当てはまる短い名前は
+   どちらか分からないので、切れたままにしておく（別人にしない）。 */
+function expandJockeyNames(horses, pool){
+  const full = Array.from(pool);
+  let n = 0;
+  horses.forEach(h => {
+    const name = h.jockeyName;
+    if(!name || pool.has(name)) return;      // そのまま載っている名前は触らない
+    const cand = full.filter(f => f.length > name.length && f.indexOf(name) === 0);
+    if(cand.length === 1){ h.jockeyName = cand[0]; n++; }
+  });
+  return n;
 }
 
 function inKinRange(x){
@@ -540,7 +572,7 @@ function parseHorses(text, raceDistance){
   const nk = parseNetkeiba(text);
   if(nk && nk.horses.length >= 2){
     inferAptitude(nk.horses, raceDistance);
-    return {horses: nk.horses, netkeiba: true,
+    return {horses: nk.horses, netkeiba: true, jockeys: nk.jockeys,
             warnings: nk.warnings.concat(summarize(nk.horses))};
   }
   const row = parseRowwise(text);
@@ -573,6 +605,14 @@ function summarize(horses){
     else if(g < n) missing.push(`${k}（${g}/${n}頭のみ）`);
   });
   if(missing.length) out.push("読み取れなかった項目があります: " + missing.join("、"));
+
+  /* 出走前の紙面には今回の馬体重が載っていない。前走の値は載っているので、
+     それを目安として各馬に渡してある。当日発表されたら入れてもらう。 */
+  const prevN = live.filter(h => h.prevWeight).length;
+  if(!gotCount("馬体重") && prevN){
+    out.push(`今回の馬体重はまだ発表されていない紙面です。前走の馬体重（${prevN}頭ぶん）を各馬の欄に目安として出しています。` +
+             "当日の値を入れると増減が自動で計算されます。");
+  }
 
   // 既定値のままになった項目だけを挙げる（読めた項目まで「未入力」と言わない）
   const left = ["近走着順", "脚質", "距離適性", "馬場適性"].filter(k => gotCount(k) === 0);
@@ -735,10 +775,12 @@ function parseRacecard(input, opts){
   return {
     race: r.race,
     horses: h.horses,
+    jockeys: h.jockeys || [],
     warnings: r.warnings.concat(h.warnings),
     text
   };
 }
 
-return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml, normalize};
+return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
+        normalize, expandJockeyNames};
 });

@@ -312,6 +312,41 @@ function polyfill(){
     assert.deepStrictEqual(M10.horses[7].last1, 2);
   });
 
+  t("紙面で切れた騎手名を、過去走の欄の長い表記に直す", () => {
+    /* 今回の騎手欄は幅が狭く「小野楓馬」が「小野楓」で切れる。
+       切れたままだと同じ騎手が別人として記憶され、評価が引き継がれない。 */
+    const jk = M10.horses.map(h => h.jockeyName);
+    assert.deepStrictEqual(jk,
+      ["小野楓馬","阿部龍","宮内勇樹","桑村真明","服部茂史",
+       "岩橋勇二","石川倭","近藤翔月","落合玄"]);
+    assert.ok(M10.warnings.some(w => /騎手名が紙面で切れていた/.test(w)),
+      "直したことを報告していない");
+  });
+
+  t("伸ばす先が2つ以上ある名前は切れたまま残す", () => {
+    // 落合玄 はこの紙面の過去走に長い表記が無いので、勝手に決めない
+    assert.strictEqual(M10.horses[8].jockeyName, "落合玄");
+    const pool = new Set(["落合玄太", "落合玄一"]);
+    const hs = [{jockeyName:"落合玄"}];
+    assert.strictEqual(P.expandJockeyNames(hs, pool), 0, "候補が2つあるのに直している");
+    assert.strictEqual(hs[0].jockeyName, "落合玄");
+    // 候補が1つなら直す
+    const hs2 = [{jockeyName:"落合玄"}];
+    assert.strictEqual(P.expandJockeyNames(hs2, new Set(["落合玄太"])), 1);
+    assert.strictEqual(hs2[0].jockeyName, "落合玄太");
+  });
+
+  t("今回の馬体重が未発表なら、前走の値を目安として渡す", () => {
+    const live = M10.horses.filter(h => !h.scratched);
+    assert.ok(live.every(h => !h.weight), "未発表なのに今回の馬体重を入れている");
+    assert.ok(live.every(h => h.wdiff === 0), "増減を入れている");
+    assert.deepStrictEqual(M10.horses.map(h => h.prevWeight),
+      [502, 468, 466, 540, 494, 510, 490, 484, 465]);
+    // 案内の頭数は出走馬ぶん（取消の1頭は数えない）
+    assert.ok(M10.warnings.some(w => /前走の馬体重（8頭ぶん）/.test(w)),
+      "前走の値を出している旨の案内がない: " + JSON.stringify(M10.warnings));
+  });
+
   t("過去走が除外でも近走着順がずれない", () => {
     // 3番カツノトキメキの4走前は「除」。前3走は 6・4・1。
     const h = M10.horses.find(x => x.num === 3);
