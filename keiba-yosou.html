@@ -1234,7 +1234,9 @@ const NOT_A_PERSON = new Set([
   "中央","地方","距離","馬場","発走","本日","結果","成績","出走","除外","取消","中止",
   "美浦","栗東","南関","公営"
 ]);
-const PERSON_RE = /^[一-龥ぁ-んァ-ヴー]{2,6}$/;
+// 々（佐々木）・〆・ヶ を漢字と同じ扱いにする。外すと「佐々木」が人名として通らない。
+const KANJI = "一-龥々〆ヶ";
+const PERSON_RE = new RegExp("^[" + KANJI + "ぁ-んァ-ヴー]{2,6}$");
 function isPerson(s, trackNames){
   if(!PERSON_RE.test(s) || NOT_A_PERSON.has(s)) return false;
   if(trackNames && trackNames.has(s)) return false;   // 厩舎欄の所属地は騎手ではない
@@ -1415,7 +1417,9 @@ function parseNetkeiba(text){
   // 行の役割は位置ではなく中身で見分ける。過去走の本数などで
   // 行数がずれても壊れないようにするため。
   const isSire   = c => c.length > 1 && /^(?:牡|牝|セン?|騸)\d{1,2}/.test(c[1]);
-  const isDam    = c => c.length > 0 && /^[ァ-ヴ][ァ-ヴー]{1,9}\s*\(/.test(c[0]);
+  /* 母名の行。「母名 (母父名)」の形。外国産馬は「Sea Chanter (War Chant)」
+     のようにローマ字で載るため、カタカナに限定しない。 */
+  const isDam    = c => c.length > 0 && /^[ァ-ヴA-Za-z][^()\t]{1,24}\(/.test(c[0]);
   const isHorse  = c => c.length > 0 && NAME_BLOCK.test(c[0]);
   const isKinryo = c => c.some(x => /^(?:ダ|芝)\d{3,4}$/.test(x)) &&
                         c.some(x => KIN_CELL.test(x) && inKinRange(x));
@@ -1449,7 +1453,7 @@ function parseNetkeiba(text){
   const knownJockeys = new Set();
   anchors.forEach(i => {
     const line = cells[i].join("\t");
-    const re = /([一-龥ぁ-んァ-ヴー]{2,6})\s*(?:4[7-9]|5\d|6[0-3])(?:\.\d)?(?![\d.])/g;
+    const re = new RegExp("([" + KANJI + "ぁ-んァ-ヴー]{2,6})\\s*(?:4[7-9]|5\\d|6[0-3])(?:\\.\\d)?(?![\\d.])", "g");
     let m;
     while((m = re.exec(line)) !== null){
       if(isPerson(m[1], trackNames)) knownJockeys.add(m[1]);
@@ -1477,7 +1481,6 @@ function parseNetkeiba(text){
     };
     const ai = findIdx(above, isSire);
     const A = ai < 0 ? null : cells[ai];
-    const C = findIn(above, isDam);
     /* 馬名行は父名行のすぐ下。これは紙面の並びで決まっているので最優先で使う。
        （下から探すと、レース名の行や母名の行を先に拾ってしまう。
          レース名は「ロードカナロア賞」のように紙面で切れると馬名と区別できない） */
@@ -1492,6 +1495,10 @@ function parseNetkeiba(text){
       B = findIn(above.filter(k => k !== i - 1), notSireDam)
        || findIn(above, notSireDam);
     }
+    /* 母名・騎手の行はアンカーのすぐ上。母父が併記されていない馬や、
+       母名がローマ字の外国産馬でも取りこぼさないよう、直上の行で拾い直す。 */
+    let C = findIn(above, isDam);
+    if(!C && i - 1 > prevAnchor && cells[i-1] !== A && cells[i-1] !== B) C = cells[i-1];
     const E = findIn(below, isKinryo);
     const F = findIn(below, isOdds) || findIn(below, c => c.length && STYLE_TOKEN[c[0]]);
     const D = cells[i];
@@ -1601,7 +1608,13 @@ function parseNetkeiba(text){
   horses.sort((a, b) => a.num - b.num);
   const grew = expandJockeyNames(horses, knownJockeys);
   warnings.push("netkeibaの馬柱形式として読み取りました。");
-  if(grew) warnings.push(`騎手名が紙面で切れていた ${grew}頭 は、過去走の欄に載っている長い表記に直しました。`);
+  if(grew.grown) warnings.push(`騎手名が紙面で切れていた ${grew.grown}頭 は、過去走の欄に載っている長い表記に直しました。`);
+  if(grew.ambiguous.length){
+    // 「山本聡」が山本聡紀にも山本聡哉にも当てはまる、といった場合。別人にしない。
+    warnings.push("騎手名が紙面で切れており、候補が複数あるためそのままにしました: " +
+      grew.ambiguous.map(a => `${a.num}番「${a.name}」（${a.cand.join("／")}）`).join("、") +
+      "。同じ表記でも別の騎手のことがあるので、正しい方に直してください。");
+  }
   if(declared && declared !== horses.length){
     warnings.push(`紙面には ${declared}頭 とありますが ${horses.length}頭 しか読み取れませんでした。読み取り漏れがある可能性があります。`);
   }
@@ -1613,14 +1626,16 @@ function parseNetkeiba(text){
    どちらか分からないので、切れたままにしておく（別人にしない）。 */
 function expandJockeyNames(horses, pool){
   const full = Array.from(pool);
-  let n = 0;
+  let grown = 0;
+  const ambiguous = [];
   horses.forEach(h => {
     const name = h.jockeyName;
     if(!name || pool.has(name)) return;      // そのまま載っている名前は触らない
     const cand = full.filter(f => f.length > name.length && f.indexOf(name) === 0);
-    if(cand.length === 1){ h.jockeyName = cand[0]; n++; }
+    if(cand.length === 1){ h.jockeyName = cand[0]; grown++; }
+    else if(cand.length > 1) ambiguous.push({num: h.num, name: name, cand: cand});
   });
-  return n;
+  return {grown: grown, ambiguous: ambiguous};
 }
 
 function inKinRange(x){
@@ -1833,7 +1848,7 @@ function parseRowwise(text){
 
     // 騎手名（斤量・オッズを取り除いた後に最初に現れる人名らしい語）
     const trackNames2 = new Set(ENGINE ? ENGINE.TRACK_KEYS.map(k => ENGINE.TRACKS[k].name) : []);
-    const jk = seg.match(/(?:^|[\s\t])([一-龥ぁ-んァ-ヴー]{2,6})(?=[\s\t]|$)/g);
+    const jk = seg.match(new RegExp("(?:^|[\\s\\t])([" + KANJI + "ぁ-んァ-ヴー]{2,6})(?=[\\s\\t]|$)", "g"));
     if(jk){
       const cand = jk.map(x => x.trim()).find(x => isPerson(x, trackNames2));
       if(cand){ h.jockeyName = cand; h._got.push("騎手名"); }
@@ -2251,7 +2266,7 @@ function expandWithMemory(list){
      より長い表記が別にあるものは辞書から外す。 */
   const pool = new Set(all.filter(n =>
     !all.some(m => m.length > n.length && m.indexOf(n) === 0)));
-  return TurfParse.expandJockeyNames(list, pool);
+  return TurfParse.expandJockeyNames(list, pool).grown;
 }
 
 // 記憶している評価を出走馬へ当てる

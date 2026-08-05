@@ -328,11 +328,11 @@ function polyfill(){
     assert.strictEqual(M10.horses[8].jockeyName, "落合玄");
     const pool = new Set(["落合玄太", "落合玄一"]);
     const hs = [{jockeyName:"落合玄"}];
-    assert.strictEqual(P.expandJockeyNames(hs, pool), 0, "候補が2つあるのに直している");
+    assert.strictEqual(P.expandJockeyNames(hs, pool).grown, 0, "候補が2つあるのに直している");
     assert.strictEqual(hs[0].jockeyName, "落合玄");
     // 候補が1つなら直す
     const hs2 = [{jockeyName:"落合玄"}];
-    assert.strictEqual(P.expandJockeyNames(hs2, new Set(["落合玄太"])), 1);
+    assert.strictEqual(P.expandJockeyNames(hs2, new Set(["落合玄太"])).grown, 1);
     assert.strictEqual(hs2[0].jockeyName, "落合玄太");
   });
 
@@ -351,6 +351,63 @@ function polyfill(){
     // 3番カツノトキメキの4走前は「除」。前3走は 6・4・1。
     const h = M10.horses.find(x => x.num === 3);
     assert.deepStrictEqual([h.last1, h.last2, h.last3], [6, 4, 1]);
+  });
+
+
+  /* ---- 盛岡12R（印の欄が無い・外国産馬・「々」を含む騎手名） ---- */
+  const mkBuf = fs.readFileSync(path.join(__dirname, "fixture-morioka12r.pdf"));
+  const mk = await PDF.pdfToText(new Uint8Array(mkBuf), globalThis.pdfjsLib);
+  const MK = P.parseRacecard(mk.text, {html:false});
+
+  console.log("\n■ 盛岡12R（騎手名が取れなかったPDF）");
+
+  t("12頭すべて読み取り、全頭の騎手名が入る", () => {
+    assert.strictEqual(MK.horses.length, 12, "頭数: " + MK.horses.length);
+    const missing = MK.horses.filter(h => !h.jockeyName).map(h => h.num);
+    assert.deepStrictEqual(missing, [], "騎手名が無い馬番: " + missing.join(","));
+  });
+
+  t("母名がローマ字の外国産馬でも騎手名を拾う", () => {
+    // 3番の母名は「Sea Chanter (War Chant)」、10番は「Red Hot Tweet (Heatseeker)」。
+    // カタカナ限定で母名行を判定していたため、この2頭だけ騎手が空だった。
+    assert.strictEqual(MK.horses[2].jockeyName, "高松亮");
+    assert.strictEqual(MK.horses[9].jockeyName, "大坪慎");
+  });
+
+  t("「々」を含む騎手名を人名として扱う", () => {
+    // 「佐々木」の々は漢字の範囲(一-龥)に入らないため、人名判定から漏れていた
+    assert.strictEqual(MK.horses[8].jockeyName, "佐々木志");
+  });
+
+  t("印の欄が無い紙面でも馬番と騎手がずれない", () => {
+    // この紙面のアンカー行は「枠 馬番 厩舎…」で、印（--）の欄が無い
+    assert.deepStrictEqual(MK.horses.map(h => h.num), [1,2,3,4,5,6,7,8,9,10,11,12]);
+    assert.deepStrictEqual(MK.horses.map(h => h.jockeyName),
+      ["岩本怜","小林凌","高松亮","山本聡","山本政聡","山本聡",
+       "鈴木祐","塚本涼","佐々木志","大坪慎","関本玲","高橋悠里"]);
+  });
+
+  t("候補が複数ある切れた騎手名は直さず、はっきり報告する", () => {
+    // 「山本聡」は山本聡紀にも山本聡哉にも当てはまる。別人にしない。
+    assert.ok(MK.warnings.some(w => /候補が複数あるためそのままにしました/.test(w) &&
+                                    /山本聡/.test(w)),
+      "候補が複数ある旨の警告が無い: " + JSON.stringify(MK.warnings));
+  });
+
+  t("盛岡（芝のある地方競馬場）とダート1000mを認識する", () => {
+    assert.strictEqual(MK.race.track, "morioka");
+    assert.strictEqual(MK.race.surface, "dirt");
+    assert.strictEqual(MK.race.distance, 1000);
+  });
+
+  t("オッズ・斤量・脚質・近走も12頭ぶん揃う", () => {
+    assert.deepStrictEqual(MK.horses.map(h => h.odds),
+      [82.7, 18.2, 11.1, 1.4, 5.3, 12.2, 43.3, 128.5, 74.9, 179.2, 27.3, 26.3]);
+    assert.ok(MK.horses.every(h => h.kinryo >= 54 && h.kinryo <= 58));
+    assert.ok(MK.horses.every(h => h.last1 > 0), "近走着順が取れていない馬がある");
+    const rows = E.analyze(Object.assign({pace:"mid", condition:0, budget:5000}, MK.race), MK.horses);
+    assert.strictEqual(rows.length, 12);
+    assert.ok(Math.abs(rows.reduce((a,x)=>a+x.prob,0) - 1) < 1e-9);
   });
 
   console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

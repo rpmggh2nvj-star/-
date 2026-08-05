@@ -144,7 +144,7 @@ function expandWithMemory(list){
      より長い表記が別にあるものは辞書から外す。 */
   const pool = new Set(all.filter(n =>
     !all.some(m => m.length > n.length && m.indexOf(n) === 0)));
-  return TurfParse.expandJockeyNames(list, pool);
+  return TurfParse.expandJockeyNames(list, pool).grown;
 }
 
 // 記憶している評価を出走馬へ当てる
