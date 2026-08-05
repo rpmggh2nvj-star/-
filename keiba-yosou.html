@@ -263,6 +263,39 @@ button.danger{color:var(--red);border-color:var(--red-line);background:var(--red
 .grade.g-strong{border-color:var(--turf);background:var(--turf-tint);}
 .grade.g-strong .g-title{color:var(--turf);}
 
+/* 荒れ度と、その場合の買い方 */
+.upset{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:12px 14px;margin-bottom:14px;
+}
+.upset .u-head{display:flex;align-items:baseline;gap:6px;}
+.upset .u-label{font-weight:800;font-size:.92rem;letter-spacing:.04em;}
+.upset .u-score{font-size:1.3rem;font-weight:800;margin-left:auto;}
+.upset .u-max{font-size:.72rem;color:var(--ink-soft);}
+.upset .u-bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:8px 0 10px;}
+.upset .u-bar span{display:block;height:100%;border-radius:4px;background:currentColor;}
+.upset ul{margin:0;padding-left:1.15em;}
+.upset li{font-size:.78rem;line-height:1.6;}
+.upset .u-reasons{color:var(--ink-soft);}
+.upset .u-advice{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px;font-size:.78rem;}
+.upset .u-advice b{display:block;margin-bottom:3px;}
+.upset.u-low   {color:var(--turf);}
+.upset.u-mid   {color:var(--gold-ink);}
+.upset.u-high  {color:var(--red);}
+.upset .u-reasons li,.upset .u-advice{color:var(--ink);}
+.upset .u-reasons li{color:var(--ink-soft);}
+
+/* 荒れ度ごとの成績 */
+.upset-stats{display:grid;gap:6px;margin:10px 0 4px;}
+.us-row{
+  display:grid;grid-template-columns:6.5em 1fr auto;gap:8px;align-items:center;
+  font-size:.74rem;border:1px solid var(--line);border-radius:9px;padding:6px 10px;background:var(--field);
+}
+.us-row .us-label{font-weight:700;}
+.us-row .us-bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;}
+.us-row .us-bar span{display:block;height:100%;background:var(--red);border-radius:3px;}
+.us-row .us-num{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-soft);}
+
 /* 買い目ごとの的中率・必要オッズ */
 .odds-need{
   display:grid;grid-template-columns:auto 1fr auto 1fr;gap:2px 6px;align-items:baseline;
@@ -674,6 +707,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
       </label>
     </div>
     <div class="stat-row" id="histStats"></div>
+    <div class="upset-stats" id="upsetStats"></div>
     <div id="histList"></div>
     <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
     <p class="hint" style="margin:12px 0 0">
@@ -688,6 +722,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
   <section class="panel" id="results" style="margin-top:20px">
     <div class="panel-head"><h2>予想結果</h2><span class="hint" id="resultRace"></span></div>
     <div class="grade" id="gradeBox"></div>
+    <div class="upset" id="upsetBox"></div>
     <div class="verdict" id="verdict"></div>
     <div class="info-note" id="infoNote" hidden></div>
     <div id="rankList"></div>
@@ -1000,7 +1035,97 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     rows.infoLevel = info;
     rows.temperature = T;
     rows.marketWeight = W;
+    rows.race = r;
+    rows.upset = upsetRisk(r, rows);
     return rows;
+  }
+
+  /* ============================================================
+     荒れ度（波乱のリスク）
+     ------------------------------------------------------------
+     レースが荒れるのは偶然だけではなく、荒れやすい条件がある。
+     予想の当たり外れとは別に、そのレースがどれだけ崩れやすいかを
+     0〜100 で表し、買い方をそれに合わせる。
+
+     大事なのは、荒れそうなときに強気になるのではなく、
+     「推定勝率そのものが当てにならなくなる」と考えることである。
+     したがって、点数は広げるが投入額はむしろ絞る。
+     ============================================================ */
+  const UPSET_HIGH = 60;
+  const UPSET_MID  = 35;
+
+  function upsetRisk(r, rows){
+    const n = rows.length;
+    const reasons = [];
+
+    // 1) 混戦度。勝率分布のエントロピーを、完全な横一線を1として正規化する。
+    let H = 0;
+    rows.forEach(x => { if(x.prob > 0) H -= x.prob * Math.log(x.prob); });
+    const flat = n > 1 ? H / Math.log(n) : 0;
+    if(flat >= 0.93) reasons.push("上位の力が拮抗していて、勝ち馬を1頭に絞れません");
+
+    // 2) ペース崩壊。逃げ馬が多いと前が総崩れになり、後ろから差が詰まる。
+    const nige = rows.filter(x => x.h.style === "nige").length;
+    const pace = nige >= 4 ? 1 : nige >= 3 ? 0.7 : nige >= 2 ? 0.35 : 0;
+    if(nige >= 3) reasons.push(`逃げ馬が ${nige}頭 いてハイペースになりやすく、前が崩れる形です`);
+
+    // 3) 道悪。能力より馬場適性が効き、実績どおりに走らない馬が増える。
+    const cond = [0, 0.25, 0.6, 0.85][r && r.condition] || 0;
+    if(r && r.condition >= 2) reasons.push("馬場が渋っていて、実績どおりに走らない馬が出ます");
+
+    // 4) 多頭数。不利を受ける馬が増え、力どおりの決着になりにくい。
+    const size = Math.min(1, Math.max(0, (n - 8) / 8));
+    if(n >= 14) reasons.push(`${n}頭立てで、道中の不利を受ける馬が増えます`);
+
+    // 5) 1番人気の危うさ。人気を被っている（期待値が1を割る）ほど崩れやすい。
+    const fav = rows.slice().sort((a, b) => a.h.odds - b.h.odds)[0];
+    const favRisk = fav ? Math.min(1, Math.max(0, (1.0 - fav.ev) / 0.4)) : 0;
+    if(fav && fav.ev <= 0.80){
+      reasons.push(`1番人気（${fav.h.num}番）の期待値が ${fav.ev.toFixed(2)} と低く、人気を被っています`);
+    }
+
+    const score = Math.round(100 * (0.34*flat + 0.20*pace + 0.18*cond + 0.10*size + 0.18*favRisk));
+    const level = score >= UPSET_HIGH ? "high" : score >= UPSET_MID ? "mid" : "low";
+    const label = {high:"荒れやすい", mid:"やや荒れる", low:"堅い"}[level];
+
+    if(!reasons.length){
+      reasons.push(level === "low"
+        ? "崩れる要素が見当たらず、力どおりの決着になりやすい組み合わせです"
+        : "決定的な波乱材料はありませんが、上位の差はそれほど大きくありません");
+    }
+
+    return {
+      score: score, level: level, label: label, reasons: reasons,
+      flat: Math.round(flat*100)/100, nige: nige,
+      width: level === "high" ? 5 : level === "mid" ? 3 : 2,
+      // 荒れるほど推定勝率の信頼度が落ちるので、投入額は絞る
+      stakeScale: level === "high" ? 0.7 : level === "mid" ? 0.9 : 1.0,
+      advice: upsetAdvice(level)
+    };
+  }
+
+  /* 荒れ度に応じた買い方。実際の買い目もこの方針で組み立てる。 */
+  function upsetAdvice(level){
+    if(level === "high"){
+      return [
+        "軸を1頭に決め打ちせず、相手を5頭まで広げます。",
+        "単勝の比重を下げ、ワイド・三連複で面を取ります（1点あたりを薄く、点数を多く）。",
+        "推定勝率そのものが当てにならなくなる局面なので、投入額を3割減らします。",
+        "人気馬の単勝で取り返そうとしないでください。荒れるレースほど人気馬の期待値は下がります。"
+      ];
+    }
+    if(level === "mid"){
+      return [
+        "相手は3頭まで。ワイドを併用して取りこぼしを減らします。",
+        "投入額を1割減らします。",
+        "妙味馬（期待値1.10以上）が絡む買い目を1点だけ残します。"
+      ];
+    }
+    return [
+      "相手は2頭に絞ります。広げても必要オッズが上がるだけで割に合いません。",
+      "単勝・馬連を中心に、点数を絞って厚く買います。",
+      "三連複は出しません（点数のわりに必要オッズが高くなります）。"
+    ];
   }
 
   /* ============================================================
@@ -1152,7 +1277,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   function buildBets(rows, budget){
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
-      return {bets: [], value: null, dropped: [], grade: grade, spend: 0, budget: budget};
+      return {bets: [], value: null, dropped: [], grade: grade,
+              upset: rows.upset || null, spend: 0, budget: budget};
     }
 
     const probs = rows.map(x => x.prob);
@@ -1178,11 +1304,17 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     const push = (o) => { if(o.combos.length) bets.push(o); };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
 
+    /* 荒れるレースでは推定勝率そのものが当てにならなくなる。
+       単勝（1頭に賭ける）の比重を下げ、面で取る券種に回す。 */
+    const up = rows.upset || upsetRisk(rows.race, rows);
+    const tanRatio = up.level === "high" ? 0.18 : up.level === "mid" ? 0.25 : 0.30;
+
     // --- 単勝：期待値が1.0を超える馬だけ、期待値の高い順に最大2頭 ---
     const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
                     .sort((x, y) => y.ev - x.ev).slice(0, 2);
     tan.forEach((x, k) => {
-      push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k, ratio: k === 0 ? 0.30 : 0.15,
+      push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k,
+            ratio: k === 0 ? tanRatio : tanRatio / 2,
             combos: [String(x.h.num)], hit: x.prob, needOdds: 1 / x.prob, evKnown: x.ev,
             memo: `推定勝率 ${(x.prob*100).toFixed(1)}% × ${x.h.odds.toFixed(1)}倍 ＝ 期待値 ${x.ev.toFixed(2)}`});
     });
@@ -1199,10 +1331,9 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       }
     }
 
-    // --- 相手の広げ方は本命の信頼度で決める ---
+    // --- 相手の広げ方は荒れ度で決める（堅い2頭／やや荒れ3頭／荒れ5頭） ---
     const v = verdictOf(rows);
-    const width = v.width;                       // 相手にする頭数
-    const mates = rows.filter(x => x.h.num !== a).slice(0, width).map(x => x.h.num);
+    const mates = rows.filter(x => x.h.num !== a).slice(0, up.width).map(x => x.h.num);
 
     if(mates.length){
       const combos = mates.map(x => `${a}-${x}`);
@@ -1217,19 +1348,19 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       const w = mates.slice(0, 2);
       const combos = w.map(x => `${a}-${x}`);
       const hit = w.reduce((s, m) => s + wideProb(probs, idx[a], idx[m]), 0);
-      push({name: "ワイド", prio: 70, ratio: 0.13, combos: combos,
+      push({name: "ワイド", prio: 70, ratio: up.level === "high" ? 0.22 : 0.13, combos: combos,
             hit: hit, needOdds: need(hit, combos.length),
             memo: `堅めの押さえ。的中 ${(hit*100).toFixed(1)}%`});
     }
 
     // --- 三連複：点数が増えるほど必要オッズが上がるので、混戦のときだけ ---
-    if(mates.length >= 3 && n >= 4 && v.grade !== "solid"){
+    if(mates.length >= 3 && n >= 4 && up.level !== "low"){
       const tri = [], pairs = [];
       for(let i=0;i<mates.length;i++){
         for(let j=i+1;j<mates.length;j++){ tri.push(`${a}-${mates[i]}-${mates[j]}`); pairs.push([mates[i], mates[j]]); }
       }
       const hit = pairs.reduce((s, pr) => s + trioProb(probs, idx[a], idx[pr[0]], idx[pr[1]]), 0);
-      push({name: "三連複 軸1頭流し", prio: 60, ratio: 0.20, combos: tri,
+      push({name: "三連複 軸1頭流し", prio: 60, ratio: up.level === "high" ? 0.28 : 0.20, combos: tri,
             hit: hit, needOdds: need(hit, tri.length),
             memo: `${a} 軸 → ${mates.join("・")}。的中 ${(hit*100).toFixed(1)}%`});
     }
@@ -1241,8 +1372,11 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
             memo: `期待値 ${value.ev.toFixed(2)} の ${value.h.num}番 を絡めた一撃`});
     }
 
-    // レース評価に応じて実際に使う額を決める
-    const spend = Math.max(100, Math.floor(budget * grade.stakeRatio / 100) * 100);
+    /* 実際に使う額。期待値の大きさ（レース評価）で決めたうえで、
+       荒れやすいレースではさらに絞る。推定勝率が当てにならなくなるためで、
+       点数を広げることと投入額を増やすことは別だという整理にしている。 */
+    const spend = Math.max(100,
+      Math.floor(budget * grade.stakeRatio * up.stakeScale / 100) * 100);
 
     // 1点100円が最低単位のため、点数が多いと予算を超えることがある。
     // 収まるまで優先度の低い券種から落とす。
@@ -1262,7 +1396,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
-    return {bets: live, value, dropped, grade: grade, spend: spend, budget: budget};
+    return {bets: live, value, dropped, grade: grade, upset: up,
+            spend: spend, budget: budget};
   }
 
   /* ---------- 妙味・過剰人気の判定 ----------
@@ -1287,22 +1422,21 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   }
 
   /* ---------- 総評 ---------- */
-  /* 本命の信頼度。width は相手にする頭数で、そのまま買い目の点数を決める。
-     堅いレースで手広く流すと点数だけ増えて必要オッズが跳ね上がるため、
-     信頼度が高いほど相手を絞る。 */
+  /* 本命の信頼度。相手にする頭数は荒れ度（upsetRisk）が決めるので、
+     ここでは「勝ち馬をどれだけ絞り込めているか」だけを述べる。 */
   function verdictOf(rows){
     const topProb = rows[0].prob;
     const gap = rows.length > 1 ? rows[0].prob - rows[1].prob : topProb;
     if(topProb >= 0.33 && gap >= 0.12){
-      return {grade:"solid", width:2, title:"堅い決着が濃厚",
-              sub:"本命の信頼度が高いので、相手は2頭まで。手広く流すと点数だけ増えて割に合いません。"};
+      return {grade:"solid", title:"本命の信頼度は高い",
+              sub:`推定勝率 ${(topProb*100).toFixed(0)}% で、2番手を ${(gap*100).toFixed(0)}ポイント引き離しています。`};
     }
     if(topProb >= 0.22){
-      return {grade:"mid", width:3, title:"本命中心・やや堅め",
-              sub:"本命を軸に、相手は3頭までが妥当です。"};
+      return {grade:"mid", title:"本命中心・やや堅め",
+              sub:`推定勝率 ${(topProb*100).toFixed(0)}% の馬が抜けていますが、決め手には欠けます。`};
     }
-    return {grade:"open", width:4, title:"混戦・波乱含み",
-            sub:"上位の差が小さいレースです。相手を4頭に広げ、妙味馬を絡めます。"};
+    return {grade:"open", title:"勝ち馬を絞れない",
+            sub:`最上位でも推定勝率 ${(topProb*100).toFixed(0)}% しかなく、上位の差が小さいレースです。`};
   }
 
   /* ---------- 出走馬の既定値 ---------- */
@@ -1330,6 +1464,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
+    upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
     MAX_FIELD: 18
   };
@@ -2236,6 +2371,35 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
 
   const MIN_RIDES = 10;         // これ未満の騎乗数では評価を提案しない
 
+  /* ---------- 古い記録の読み直し ----------
+     アプリを更新すると、記録に無かった項目（レース評価・荒れ度など）が増える。
+     すでに端末へ保存されている記録は、その項目を持たないまま残っている。
+     読み込み時にここを通し、欠けている項目を既定値で埋めて形を揃える。
+
+     方針は「消さない・書き換えない」。判別できない項目は null のままにし、
+     集計側が null を無視できるようにしてある。過去の記録を作り直したり、
+     新しい基準で判定し直したりはしない（当時の予想は当時のまま残す）。 */
+  function normalizeRecord(r){
+    if(!r || typeof r !== "object") return null;
+    if(!r.id || !r.savedAt) return null;                 // 記録として成立しないもの
+    const out = {
+      id: String(r.id),
+      savedAt: Number(r.savedAt) || 0,
+      grade: r.grade || null,                            // v1 の記録には無い
+      upset: r.upset || null,                            // v1 の記録には無い
+      race: r.race || {},
+      pred: Array.isArray(r.pred) ? r.pred : [],
+      bets: Array.isArray(r.bets) ? r.bets : [],
+      result: r.result && r.result.first ? r.result : null
+    };
+    return out;
+  }
+
+  function normalize(records){
+    if(!Array.isArray(records)) return [];
+    return records.map(normalizeRecord).filter(Boolean);
+  }
+
   function hasResult(r){
     return !!(r && r.result && r.result.first);
   }
@@ -2263,6 +2427,45 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
     s.showPct = pct(s.show, s.done);
     s.top3Pct = pct(s.top3, s.done);
     return s;
+  }
+
+  /* ---------- 実際に荒れたかどうか ----------
+     予想の当たり外れとは別に、そのレースが荒れたかを結果から判定する。
+     「1着馬を予想の上位3頭に入れられなかった」または
+     「1着馬が10倍以上の人気薄だった」ときを荒れたレースとする。 */
+  const UPSET_ODDS = 10;
+
+  function wasUpset(r){
+    if(!hasResult(r)) return null;
+    const pred = r.pred || [];
+    const winner = pred.find(p => p.num === r.result.first);
+    if(!winner) return true;                        // 予想に無い馬が勝った
+    return winner.rank > 3 || winner.odds >= UPSET_ODDS;
+  }
+
+  /* ---------- 荒れ度ごとの成績 ----------
+     「荒れると読んだレースで実際に荒れたか」「そのとき当てられたか」を見る。
+     予測が当たっているかを確かめられないと、荒れ度の指標を信用してよいか
+     判断できないため。記録に荒れ度が無い（更新前の）ものは対象外にする。 */
+  function byUpset(records){
+    const levels = [
+      {level:"low",  label:"堅い"},
+      {level:"mid",  label:"やや荒れる"},
+      {level:"high", label:"荒れやすい"}
+    ];
+    return levels.map(L => {
+      const list = (records || []).filter(r => r.upset && r.upset.level === L.level);
+      const done = list.filter(hasResult);
+      const rough = done.filter(wasUpset).length;
+      const s = raceStats(list);
+      return {
+        level: L.level, label: L.label,
+        total: list.length, done: done.length,
+        rough: rough,
+        roughPct: done.length ? Math.round(rough / done.length * 1000) / 10 : null,
+        winPct: s.winPct, top3Pct: s.top3Pct
+      };
+    }).filter(x => x.total > 0);
   }
 
   /* ---------- 競馬場ごとの内訳 ---------- */
@@ -2318,13 +2521,14 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
   }
 
   /* ---------- 保存用のレコードを組み立てる ---------- */
-  function makeRecord(race, rows, bets, now, grade){
+  function makeRecord(race, rows, bets, now, grade, upset){
     return {
       id: "r" + now,
       savedAt: now,
-      // 「買うべきレースだったか」もあとから振り返れるように残す
+      // 「買うべきレースだったか」「荒れると読んだか」もあとから振り返れるように残す
       grade: grade ? {grade: grade.grade, title: grade.title,
                       bestEv: Math.round(grade.bestEv * 100) / 100} : null,
+      upset: upset ? {score: upset.score, level: upset.level, label: upset.label} : null,
       race: {
         track: race.track, surface: race.surface, course: race.course,
         distance: race.distance, condition: race.condition,
@@ -2357,9 +2561,9 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
   }
 
   return {
-    MAX_RECORDS, MIN_RIDES, GRADE_GUIDE,
-    raceStats, byTrack, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult
+    MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
+    raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
+    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord
   };
 });
 
@@ -2732,7 +2936,7 @@ function run(){
   }
 
   const rows = E.analyze(r, hs);
-  const {bets, value, dropped, grade, spend} = E.buildBets(rows, r.budget);
+  const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -2753,6 +2957,17 @@ function run(){
     `<div class="g-title">${escapeHtml(grade.title)}</div>` +
     `<div class="g-reason">${escapeHtml(grade.reason)}</div>` +
     `<div class="g-advice">${escapeHtml(grade.advice)}</div>`;
+
+  // 荒れ度と、その場合の買い方
+  const ub = $("upsetBox");
+  ub.className = "upset u-" + upset.level;
+  ub.innerHTML =
+    `<div class="u-head"><span class="u-label">荒れ度 ${escapeHtml(upset.label)}</span>` +
+    `<span class="u-score mono">${upset.score}</span><span class="u-max">/100</span></div>` +
+    `<div class="u-bar"><span style="width:${upset.score}%"></span></div>` +
+    `<ul class="u-reasons">${upset.reasons.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` +
+    `<div class="u-advice"><b>この荒れ度での買い方</b>` +
+    `<ul>${upset.advice.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`;
 
   $("verdict").innerHTML =
     escapeHtml(verdict.title) +
@@ -2832,7 +3047,7 @@ function run(){
   }
   $("droppedNote").textContent = notes.join(" ");
 
-  lastRun = {race: r, rows: rows, bets: bets, grade: grade};
+  lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};
   $("saveNote").textContent = "";
 
   $("results").style.display = "block";
@@ -3169,8 +3384,17 @@ const HIST_KEY = "turf-logic-history-v1";
 const H = window.TurfHistory;
 
 function loadHistory(){
-  try{ const a = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(a) ? a : []; }
-  catch(e){ return []; }
+  /* 更新のたびに記録の項目が増えるが、端末に残っている古い記録は
+     その項目を持たない。normalize で形だけ揃える（中身は書き換えない）。
+     読めない・壊れた記録があっても、他の記録は残す。 */
+  let raw;
+  try{ raw = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); }
+  catch(e){
+    // JSON として壊れている場合だけ、元データを退避してから空で始める
+    try{ localStorage.setItem(HIST_KEY + "-broken", localStorage.getItem(HIST_KEY) || ""); }catch(e2){}
+    return [];
+  }
+  return H.normalize(raw);
 }
 function saveHistory(list){
   try{ localStorage.setItem(HIST_KEY, JSON.stringify(list)); return true; }
@@ -3226,6 +3450,19 @@ function renderHistory(){
   ].map(([k, v, sub]) =>
     `<div class="stat-tile"><div class="k">${k}</div><div class="v mono">${v}</div><div class="s mono">${sub}</div></div>`
   ).join("");
+
+  /* 荒れ度の読みが当たっているかの検算。
+     「荒れやすい」と読んだレースが実際に荒れているかを見ないと、
+     この指標を信用してよいか判断できない。 */
+  const up = H.byUpset(list).filter(x => x.done > 0);
+  $("upsetStats").innerHTML = !up.length ? "" :
+    `<p class="hint" style="margin:0 0 6px">荒れ度の読みと実際（1着馬が予想4位以下、または${H.UPSET_ODDS}倍以上を「荒れた」とする）</p>` +
+    up.map(x => `
+      <div class="us-row">
+        <span class="us-label">${escapeHtml(x.label)}</span>
+        <span class="us-bar"><span style="width:${x.roughPct || 0}%"></span></span>
+        <span class="us-num">荒れ ${x.roughPct}% ・ ◎勝率 ${x.winPct == null ? "-" : x.winPct + "%"} ・ ${x.done}件</span>
+      </div>`).join("");
 
   $("histList").innerHTML = list.map(r => {
     const top = (r.pred && r.pred[0]) || {};
@@ -3304,7 +3541,8 @@ $("histList").addEventListener("click", e => {
 /* ---------- 予想の保存 ---------- */
 $("btnSaveRace").addEventListener("click", () => {
   if(!lastRun){ alert("先に予想してください。"); return; }
-  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now(), lastRun.grade);
+  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now(),
+                           lastRun.grade, lastRun.upset);
   history = H.addRecord(history, rec);
   if(!saveHistory(history)) return;
   $("saveNote").textContent = "記録しました。下の「予想の記録」から着順を入れられます。";

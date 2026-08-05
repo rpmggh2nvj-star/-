@@ -356,12 +356,14 @@ t("期待値1.0を超える馬がいなければ買わない", () => {
   assert.strictEqual(bets.length, 0, "見送りなのに買い目が出ている");
 });
 
-t("期待値の大きさで投入額を変える", () => {
+t("期待値の大きさと荒れ度で投入額を変える", () => {
   const rows = E.analyze(race(), lively(10));
-  const {grade, spend} = E.buildBets(rows, 10000);
+  const {grade, upset, spend} = E.buildBets(rows, 10000);
   assert.ok(["small","normal","strong"].indexOf(grade.grade) >= 0, grade.grade);
-  assert.strictEqual(spend, Math.floor(10000 * grade.stakeRatio / 100) * 100);
+  assert.strictEqual(spend,
+    Math.floor(10000 * grade.stakeRatio * upset.stakeScale / 100) * 100);
   assert.ok(grade.stakeRatio <= 1 && grade.stakeRatio > 0);
+  assert.ok(upset.stakeScale <= 1 && upset.stakeScale > 0);
 });
 
 t("単勝は期待値が1.0以上の馬にしか買わない", () => {
@@ -448,6 +450,94 @@ t("複勝は5頭以上で2着まで、8頭以上で3着まで", () => {
   assert.strictEqual(E.placePositions(7), 2);
   assert.strictEqual(E.placePositions(8), 3);
   assert.strictEqual(E.placePositions(18), 3);
+});
+
+console.log("\n■ 荒れ度と、荒れたときの買い方");
+
+/* 荒れ度を動かす条件を個別に与えられる場のつくり方 */
+function rough(n, opts){
+  opts = opts || {};
+  const hs = [];
+  for(let i=0;i<n;i++) hs.push(horse(i+1, {
+    odds: opts.odds ? opts.odds[i] : 2 + i*3,
+    last1:((i*3)%8)+1, last2:((i*5)%8)+1, last3:((i*7)%8)+1,
+    jockey:(i%5)+1, training:((i+2)%5)+1,
+    style: opts.nige != null
+      ? (i < opts.nige ? "nige" : ["senko","sashi","oikomi"][i%3])
+      : ["nige","senko","sashi","oikomi"][i%4]
+  }));
+  return hs;
+}
+
+t("荒れる条件が増えるほど荒れ度が上がる", () => {
+  const calm  = E.analyze(race({track:"nakayama"}), rough(8, {nige:1})).upset;
+  const mid   = E.analyze(race({track:"nakayama", condition:2}), rough(12, {nige:3})).upset;
+  const storm = E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})).upset;
+  assert.ok(calm.score < mid.score && mid.score < storm.score,
+    `単調でない: ${calm.score} → ${mid.score} → ${storm.score}`);
+  assert.strictEqual(calm.level, "low", "落ち着いた条件が低評価にならない: " + calm.score);
+  assert.strictEqual(storm.level, "high", "荒れる条件が高評価にならない: " + storm.score);
+  assert.ok(storm.score <= 100 && calm.score >= 0);
+});
+
+t("荒れる材料を理由として挙げる", () => {
+  const up = E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})).upset;
+  const joined = up.reasons.join("／");
+  assert.ok(/逃げ馬が 4頭/.test(joined), "ペース崩壊の指摘がない: " + joined);
+  assert.ok(/馬場/.test(joined), "道悪の指摘がない: " + joined);
+  assert.ok(/16頭立て/.test(joined), "多頭数の指摘がない: " + joined);
+  assert.ok(up.advice.length >= 3, "対処法が出ていない");
+});
+
+t("理由が1つも無くても、何か言う（空にしない）", () => {
+  const up = E.analyze(race({track:"nakayama"}), rough(8, {nige:1})).upset;
+  assert.ok(up.reasons.length >= 1, "理由が空");
+  assert.ok(up.advice.length >= 1, "対処法が空");
+});
+
+t("荒れるレースほど相手を広げ、投入額は絞る", () => {
+  const calm  = E.analyze(race({track:"nakayama"}), rough(8, {nige:1}));
+  const storm = E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4}));
+  assert.ok(storm.upset.width > calm.upset.width,
+    `相手が広がっていない: ${calm.upset.width} → ${storm.upset.width}`);
+  assert.ok(storm.upset.stakeScale < calm.upset.stakeScale,
+    `投入額が絞られていない: ${calm.upset.stakeScale} → ${storm.upset.stakeScale}`);
+  assert.strictEqual(calm.upset.stakeScale, 1.0, "堅いレースで減らしている");
+});
+
+t("荒れるレースでは単勝の比重を下げ、面で取る券種に回す", () => {
+  const calm  = E.buildBets(E.analyze(race({track:"nakayama"}), rough(8, {nige:1})), 20000);
+  const storm = E.buildBets(E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})), 20000);
+  const share = (b, name) => {
+    const hit = b.bets.filter(x => x.name.indexOf(name) === 0);
+    const used = b.bets.reduce((s,x)=>s+x.total, 0);
+    return used ? hit.reduce((s,x)=>s+x.total, 0) / used : 0;
+  };
+  assert.ok(share(storm, "単勝") < share(calm, "単勝"),
+    `単勝の比重が下がっていない: ${share(calm,"単勝").toFixed(2)} → ${share(storm,"単勝").toFixed(2)}`);
+  assert.ok(!calm.bets.some(x => x.name.indexOf("三連複") >= 0),
+    "堅いレースで三連複を出している");
+  assert.ok(storm.bets.some(x => x.name.indexOf("三連複") >= 0),
+    "荒れるレースで三連複を出していない");
+  assert.ok(storm.bets.some(x => x.name === "馬連 流し" && x.combos.length === 5),
+    "相手が5頭に広がっていない");
+});
+
+t("荒れるレースでも、必要オッズは点数に応じて上がる", () => {
+  // 手広く流せば当たりやすくなるが、必要オッズも上がる。それを隠さない。
+  const storm = E.buildBets(E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})), 20000);
+  const tri = storm.bets.find(x => x.name.indexOf("三連複") >= 0);
+  assert.ok(tri.combos.length >= 6, "三連複の点数: " + tri.combos.length);
+  assert.ok(Math.abs(tri.needOdds - tri.combos.length / tri.hit) < 1e-9);
+  assert.ok(tri.needOdds > 20, "点数のわりに必要オッズが低すぎる: " + tri.needOdds);
+});
+
+t("荒れ度は取消馬を数に入れない", () => {
+  const hs = rough(16, {nige:4});
+  const full = E.analyze(race({track:"nakayama"}), hs).upset;
+  hs.slice(12).forEach(h => { h.scratched = true; });
+  const cut = E.analyze(race({track:"nakayama"}), hs).upset;
+  assert.ok(cut.score < full.score, `取消後も同じ多頭数扱い: ${full.score} → ${cut.score}`);
 });
 
 console.log("\n■ ペース自動判定");

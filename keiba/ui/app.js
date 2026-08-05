@@ -367,7 +367,7 @@ function run(){
   }
 
   const rows = E.analyze(r, hs);
-  const {bets, value, dropped, grade, spend} = E.buildBets(rows, r.budget);
+  const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -388,6 +388,17 @@ function run(){
     `<div class="g-title">${escapeHtml(grade.title)}</div>` +
     `<div class="g-reason">${escapeHtml(grade.reason)}</div>` +
     `<div class="g-advice">${escapeHtml(grade.advice)}</div>`;
+
+  // 荒れ度と、その場合の買い方
+  const ub = $("upsetBox");
+  ub.className = "upset u-" + upset.level;
+  ub.innerHTML =
+    `<div class="u-head"><span class="u-label">荒れ度 ${escapeHtml(upset.label)}</span>` +
+    `<span class="u-score mono">${upset.score}</span><span class="u-max">/100</span></div>` +
+    `<div class="u-bar"><span style="width:${upset.score}%"></span></div>` +
+    `<ul class="u-reasons">${upset.reasons.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` +
+    `<div class="u-advice"><b>この荒れ度での買い方</b>` +
+    `<ul>${upset.advice.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`;
 
   $("verdict").innerHTML =
     escapeHtml(verdict.title) +
@@ -467,7 +478,7 @@ function run(){
   }
   $("droppedNote").textContent = notes.join(" ");
 
-  lastRun = {race: r, rows: rows, bets: bets, grade: grade};
+  lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};
   $("saveNote").textContent = "";
 
   $("results").style.display = "block";
@@ -804,8 +815,17 @@ const HIST_KEY = "turf-logic-history-v1";
 const H = window.TurfHistory;
 
 function loadHistory(){
-  try{ const a = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(a) ? a : []; }
-  catch(e){ return []; }
+  /* 更新のたびに記録の項目が増えるが、端末に残っている古い記録は
+     その項目を持たない。normalize で形だけ揃える（中身は書き換えない）。
+     読めない・壊れた記録があっても、他の記録は残す。 */
+  let raw;
+  try{ raw = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); }
+  catch(e){
+    // JSON として壊れている場合だけ、元データを退避してから空で始める
+    try{ localStorage.setItem(HIST_KEY + "-broken", localStorage.getItem(HIST_KEY) || ""); }catch(e2){}
+    return [];
+  }
+  return H.normalize(raw);
 }
 function saveHistory(list){
   try{ localStorage.setItem(HIST_KEY, JSON.stringify(list)); return true; }
@@ -861,6 +881,19 @@ function renderHistory(){
   ].map(([k, v, sub]) =>
     `<div class="stat-tile"><div class="k">${k}</div><div class="v mono">${v}</div><div class="s mono">${sub}</div></div>`
   ).join("");
+
+  /* 荒れ度の読みが当たっているかの検算。
+     「荒れやすい」と読んだレースが実際に荒れているかを見ないと、
+     この指標を信用してよいか判断できない。 */
+  const up = H.byUpset(list).filter(x => x.done > 0);
+  $("upsetStats").innerHTML = !up.length ? "" :
+    `<p class="hint" style="margin:0 0 6px">荒れ度の読みと実際（1着馬が予想4位以下、または${H.UPSET_ODDS}倍以上を「荒れた」とする）</p>` +
+    up.map(x => `
+      <div class="us-row">
+        <span class="us-label">${escapeHtml(x.label)}</span>
+        <span class="us-bar"><span style="width:${x.roughPct || 0}%"></span></span>
+        <span class="us-num">荒れ ${x.roughPct}% ・ ◎勝率 ${x.winPct == null ? "-" : x.winPct + "%"} ・ ${x.done}件</span>
+      </div>`).join("");
 
   $("histList").innerHTML = list.map(r => {
     const top = (r.pred && r.pred[0]) || {};
@@ -939,7 +972,8 @@ $("histList").addEventListener("click", e => {
 /* ---------- 予想の保存 ---------- */
 $("btnSaveRace").addEventListener("click", () => {
   if(!lastRun){ alert("先に予想してください。"); return; }
-  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now(), lastRun.grade);
+  const rec = H.makeRecord(lastRun.race, lastRun.rows, lastRun.bets, Date.now(),
+                           lastRun.grade, lastRun.upset);
   history = H.addRecord(history, rec);
   if(!saveHistory(history)) return;
   $("saveNote").textContent = "記録しました。下の「予想の記録」から着順を入れられます。";

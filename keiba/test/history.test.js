@@ -157,4 +157,134 @@ t("新しい記録が先頭に入り、上限を超えたら古いものが落�
   assert.ok(!list.some(x => x.id === "r0"), "最古の記録が残っている");
 });
 
+console.log("\n■ 更新をまたいでも記録を失わない");
+
+/* アプリを更新するたびに記録の項目が増える。すでに端末に保存されている
+   古い記録が、更新後も読めて・表示できて・集計に入ることを確かめる。 */
+const OLD_RECORD = {          // grade も upset も無い、更新前の形
+  id: "r1700000000000",
+  savedAt: 1700000000000,
+  race: {track:"ooi", surface:"dirt", distance:1600, condition:1, pace:"mid", budget:5000},
+  pred: [
+    {rank:1, num:3, name:"アイウエオ", jockeyName:"森泰斗", style:"nige", odds:2.4,
+     score:45.7, prob:0.3457, ev:0.83, edge:1.23},
+    {rank:2, num:1, name:"カキクケコ", jockeyName:"武豊", style:"sashi", odds:5.0,
+     score:38.2, prob:0.2, ev:1.0, edge:0.9}
+  ],
+  bets: [{name:"単勝", combos:["3"], unit:900, total:900}],
+  result: {first:3, second:1, third:5}
+};
+
+t("更新前の記録がそのまま残る（消さない・書き換えない）", () => {
+  const out = H.normalize([OLD_RECORD]);
+  assert.strictEqual(out.length, 1, "記録が消えた");
+  const r = out[0];
+  assert.strictEqual(r.id, OLD_RECORD.id);
+  assert.strictEqual(r.savedAt, OLD_RECORD.savedAt);
+  assert.deepStrictEqual(r.pred, OLD_RECORD.pred, "予想が書き換わっている");
+  assert.deepStrictEqual(r.bets, OLD_RECORD.bets, "買い目が書き換わっている");
+  assert.deepStrictEqual(r.result, OLD_RECORD.result, "着順が書き換わっている");
+  assert.deepStrictEqual(r.race, OLD_RECORD.race, "レース条件が書き換わっている");
+});
+
+t("新しい項目は null で埋め、後から判定し直さない", () => {
+  const r = H.normalize([OLD_RECORD])[0];
+  assert.strictEqual(r.grade, null, "当時なかったレース評価を作っている");
+  assert.strictEqual(r.upset, null, "当時なかった荒れ度を作っている");
+});
+
+t("更新前の記録も集計に入る", () => {
+  const out = H.normalize([OLD_RECORD]);
+  const s = H.raceStats(out);
+  assert.strictEqual(s.done, 1, "着順入りとして数えられていない");
+  assert.strictEqual(s.win, 1, "◎の1着が数えられていない");
+  const jk = H.jockeyStats(out);
+  assert.ok(jk.some(x => x.name === "森泰斗" && x.win === 1), "騎手成績に入っていない");
+  assert.strictEqual(H.byTrack(out).length, 1);
+});
+
+t("壊れた記録があっても、他の記録は残す", () => {
+  const out = H.normalize([OLD_RECORD, null, "こわれた", {}, {id:"x"}, {savedAt:1}]);
+  assert.strictEqual(out.length, 1, "巻き添えで消えている: " + out.length);
+  assert.strictEqual(out[0].id, OLD_RECORD.id);
+});
+
+t("配列でないものを渡しても空配列を返す", () => {
+  assert.deepStrictEqual(H.normalize(null), []);
+  assert.deepStrictEqual(H.normalize({}), []);
+  assert.deepStrictEqual(H.normalize("[]"), []);
+});
+
+t("欠けた項目があっても既定値で形が揃う", () => {
+  const out = H.normalize([{id:"a", savedAt:1}]);
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(out[0].pred, []);
+  assert.deepStrictEqual(out[0].bets, []);
+  assert.deepStrictEqual(out[0].race, {});
+  assert.strictEqual(out[0].result, null);
+});
+
+console.log("\n■ 荒れたレースの記録");
+
+const upRec = (id, level, first, pred) => ({
+  id: id, savedAt: Number(id.slice(1)),
+  upset: {score: 50, level: level, label: level},
+  race: {track:"ooi"}, pred: pred, bets: [],
+  result: {first: first, second: 0, third: 0}
+});
+const PRED = [
+  {rank:1, num:1, odds:2.0, jockeyName:"あ"},
+  {rank:2, num:2, odds:4.0, jockeyName:"い"},
+  {rank:3, num:3, odds:8.0, jockeyName:"う"},
+  {rank:4, num:4, odds:30.0, jockeyName:"え"}
+];
+
+t("実際に荒れたかを結果から判定する", () => {
+  // ◎が勝てば荒れていない
+  assert.strictEqual(H.wasUpset(upRec("r1","low",1,PRED)), false);
+  // 予想4位以下が勝てば荒れた
+  assert.strictEqual(H.wasUpset(upRec("r2","high",4,PRED)), true);
+  // 上位3頭でも10倍以上の人気薄なら荒れた
+  assert.strictEqual(H.wasUpset(upRec("r3","mid",3,PRED)), false, "8.0倍は人気薄ではない");
+  const p = PRED.map(x => x.num === 3 ? Object.assign({}, x, {odds:12.0}) : x);
+  assert.strictEqual(H.wasUpset(upRec("r4","mid",3,p)), true, "12倍の勝ちを荒れ扱いしていない");
+  // 予想に無い馬が勝ったら荒れた
+  assert.strictEqual(H.wasUpset(upRec("r5","low",9,PRED)), true);
+  // 着順未入力は判定しない
+  assert.strictEqual(H.wasUpset({id:"r6", pred:PRED, result:null}), null);
+});
+
+t("荒れ度ごとに、実際に荒れた割合を集計する", () => {
+  const list = [
+    upRec("r1","low",1,PRED), upRec("r2","low",2,PRED),      // 堅い: 荒れ0/2
+    upRec("r3","high",4,PRED), upRec("r4","high",4,PRED),
+    upRec("r5","high",1,PRED)                              // 荒れやすい: 荒れ2/3
+  ];
+  const by = H.byUpset(list);
+  const low = by.find(x => x.level === "low");
+  const high = by.find(x => x.level === "high");
+  assert.strictEqual(low.done, 2);
+  assert.strictEqual(low.roughPct, 0, "堅いレースを荒れ扱いしている");
+  assert.strictEqual(high.done, 3);
+  assert.ok(Math.abs(high.roughPct - 66.7) < 0.1, "荒れやすいの集計が違う: " + high.roughPct);
+  assert.ok(!by.some(x => x.level === "mid"), "記録の無い段階を出している");
+});
+
+t("荒れ度が無い（更新前の）記録は荒れ度の集計に入れない", () => {
+  const by = H.byUpset(H.normalize([OLD_RECORD]));
+  assert.deepStrictEqual(by, [], "荒れ度不明の記録を集計に入れている");
+});
+
+t("記録にレース評価と荒れ度を残せる", () => {
+  const r = H.makeRecord({track:"ooi"}, [], [], 1000,
+    {grade:"strong", title:"勝負できる", bestEv:1.234},
+    {score:72, level:"high", label:"荒れやすい"});
+  assert.deepStrictEqual(r.grade, {grade:"strong", title:"勝負できる", bestEv:1.23});
+  assert.deepStrictEqual(r.upset, {score:72, level:"high", label:"荒れやすい"});
+  // 渡されなければ null（CLIなど、判定を持たない呼び出しでも壊れない）
+  const r2 = H.makeRecord({track:"ooi"}, [], [], 1000);
+  assert.strictEqual(r2.grade, null);
+  assert.strictEqual(r2.upset, null);
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

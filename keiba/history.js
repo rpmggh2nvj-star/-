@@ -26,6 +26,35 @@
 
   const MIN_RIDES = 10;         // これ未満の騎乗数では評価を提案しない
 
+  /* ---------- 古い記録の読み直し ----------
+     アプリを更新すると、記録に無かった項目（レース評価・荒れ度など）が増える。
+     すでに端末へ保存されている記録は、その項目を持たないまま残っている。
+     読み込み時にここを通し、欠けている項目を既定値で埋めて形を揃える。
+
+     方針は「消さない・書き換えない」。判別できない項目は null のままにし、
+     集計側が null を無視できるようにしてある。過去の記録を作り直したり、
+     新しい基準で判定し直したりはしない（当時の予想は当時のまま残す）。 */
+  function normalizeRecord(r){
+    if(!r || typeof r !== "object") return null;
+    if(!r.id || !r.savedAt) return null;                 // 記録として成立しないもの
+    const out = {
+      id: String(r.id),
+      savedAt: Number(r.savedAt) || 0,
+      grade: r.grade || null,                            // v1 の記録には無い
+      upset: r.upset || null,                            // v1 の記録には無い
+      race: r.race || {},
+      pred: Array.isArray(r.pred) ? r.pred : [],
+      bets: Array.isArray(r.bets) ? r.bets : [],
+      result: r.result && r.result.first ? r.result : null
+    };
+    return out;
+  }
+
+  function normalize(records){
+    if(!Array.isArray(records)) return [];
+    return records.map(normalizeRecord).filter(Boolean);
+  }
+
   function hasResult(r){
     return !!(r && r.result && r.result.first);
   }
@@ -53,6 +82,45 @@
     s.showPct = pct(s.show, s.done);
     s.top3Pct = pct(s.top3, s.done);
     return s;
+  }
+
+  /* ---------- 実際に荒れたかどうか ----------
+     予想の当たり外れとは別に、そのレースが荒れたかを結果から判定する。
+     「1着馬を予想の上位3頭に入れられなかった」または
+     「1着馬が10倍以上の人気薄だった」ときを荒れたレースとする。 */
+  const UPSET_ODDS = 10;
+
+  function wasUpset(r){
+    if(!hasResult(r)) return null;
+    const pred = r.pred || [];
+    const winner = pred.find(p => p.num === r.result.first);
+    if(!winner) return true;                        // 予想に無い馬が勝った
+    return winner.rank > 3 || winner.odds >= UPSET_ODDS;
+  }
+
+  /* ---------- 荒れ度ごとの成績 ----------
+     「荒れると読んだレースで実際に荒れたか」「そのとき当てられたか」を見る。
+     予測が当たっているかを確かめられないと、荒れ度の指標を信用してよいか
+     判断できないため。記録に荒れ度が無い（更新前の）ものは対象外にする。 */
+  function byUpset(records){
+    const levels = [
+      {level:"low",  label:"堅い"},
+      {level:"mid",  label:"やや荒れる"},
+      {level:"high", label:"荒れやすい"}
+    ];
+    return levels.map(L => {
+      const list = (records || []).filter(r => r.upset && r.upset.level === L.level);
+      const done = list.filter(hasResult);
+      const rough = done.filter(wasUpset).length;
+      const s = raceStats(list);
+      return {
+        level: L.level, label: L.label,
+        total: list.length, done: done.length,
+        rough: rough,
+        roughPct: done.length ? Math.round(rough / done.length * 1000) / 10 : null,
+        winPct: s.winPct, top3Pct: s.top3Pct
+      };
+    }).filter(x => x.total > 0);
   }
 
   /* ---------- 競馬場ごとの内訳 ---------- */
@@ -108,13 +176,14 @@
   }
 
   /* ---------- 保存用のレコードを組み立てる ---------- */
-  function makeRecord(race, rows, bets, now, grade){
+  function makeRecord(race, rows, bets, now, grade, upset){
     return {
       id: "r" + now,
       savedAt: now,
-      // 「買うべきレースだったか」もあとから振り返れるように残す
+      // 「買うべきレースだったか」「荒れると読んだか」もあとから振り返れるように残す
       grade: grade ? {grade: grade.grade, title: grade.title,
                       bestEv: Math.round(grade.bestEv * 100) / 100} : null,
+      upset: upset ? {score: upset.score, level: upset.level, label: upset.label} : null,
       race: {
         track: race.track, surface: race.surface, course: race.course,
         distance: race.distance, condition: race.condition,
@@ -147,8 +216,8 @@
   }
 
   return {
-    MAX_RECORDS, MIN_RIDES, GRADE_GUIDE,
-    raceStats, byTrack, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult
+    MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
+    raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
+    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord
   };
 });

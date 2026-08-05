@@ -225,7 +225,97 @@
     rows.infoLevel = info;
     rows.temperature = T;
     rows.marketWeight = W;
+    rows.race = r;
+    rows.upset = upsetRisk(r, rows);
     return rows;
+  }
+
+  /* ============================================================
+     荒れ度（波乱のリスク）
+     ------------------------------------------------------------
+     レースが荒れるのは偶然だけではなく、荒れやすい条件がある。
+     予想の当たり外れとは別に、そのレースがどれだけ崩れやすいかを
+     0〜100 で表し、買い方をそれに合わせる。
+
+     大事なのは、荒れそうなときに強気になるのではなく、
+     「推定勝率そのものが当てにならなくなる」と考えることである。
+     したがって、点数は広げるが投入額はむしろ絞る。
+     ============================================================ */
+  const UPSET_HIGH = 60;
+  const UPSET_MID  = 35;
+
+  function upsetRisk(r, rows){
+    const n = rows.length;
+    const reasons = [];
+
+    // 1) 混戦度。勝率分布のエントロピーを、完全な横一線を1として正規化する。
+    let H = 0;
+    rows.forEach(x => { if(x.prob > 0) H -= x.prob * Math.log(x.prob); });
+    const flat = n > 1 ? H / Math.log(n) : 0;
+    if(flat >= 0.93) reasons.push("上位の力が拮抗していて、勝ち馬を1頭に絞れません");
+
+    // 2) ペース崩壊。逃げ馬が多いと前が総崩れになり、後ろから差が詰まる。
+    const nige = rows.filter(x => x.h.style === "nige").length;
+    const pace = nige >= 4 ? 1 : nige >= 3 ? 0.7 : nige >= 2 ? 0.35 : 0;
+    if(nige >= 3) reasons.push(`逃げ馬が ${nige}頭 いてハイペースになりやすく、前が崩れる形です`);
+
+    // 3) 道悪。能力より馬場適性が効き、実績どおりに走らない馬が増える。
+    const cond = [0, 0.25, 0.6, 0.85][r && r.condition] || 0;
+    if(r && r.condition >= 2) reasons.push("馬場が渋っていて、実績どおりに走らない馬が出ます");
+
+    // 4) 多頭数。不利を受ける馬が増え、力どおりの決着になりにくい。
+    const size = Math.min(1, Math.max(0, (n - 8) / 8));
+    if(n >= 14) reasons.push(`${n}頭立てで、道中の不利を受ける馬が増えます`);
+
+    // 5) 1番人気の危うさ。人気を被っている（期待値が1を割る）ほど崩れやすい。
+    const fav = rows.slice().sort((a, b) => a.h.odds - b.h.odds)[0];
+    const favRisk = fav ? Math.min(1, Math.max(0, (1.0 - fav.ev) / 0.4)) : 0;
+    if(fav && fav.ev <= 0.80){
+      reasons.push(`1番人気（${fav.h.num}番）の期待値が ${fav.ev.toFixed(2)} と低く、人気を被っています`);
+    }
+
+    const score = Math.round(100 * (0.34*flat + 0.20*pace + 0.18*cond + 0.10*size + 0.18*favRisk));
+    const level = score >= UPSET_HIGH ? "high" : score >= UPSET_MID ? "mid" : "low";
+    const label = {high:"荒れやすい", mid:"やや荒れる", low:"堅い"}[level];
+
+    if(!reasons.length){
+      reasons.push(level === "low"
+        ? "崩れる要素が見当たらず、力どおりの決着になりやすい組み合わせです"
+        : "決定的な波乱材料はありませんが、上位の差はそれほど大きくありません");
+    }
+
+    return {
+      score: score, level: level, label: label, reasons: reasons,
+      flat: Math.round(flat*100)/100, nige: nige,
+      width: level === "high" ? 5 : level === "mid" ? 3 : 2,
+      // 荒れるほど推定勝率の信頼度が落ちるので、投入額は絞る
+      stakeScale: level === "high" ? 0.7 : level === "mid" ? 0.9 : 1.0,
+      advice: upsetAdvice(level)
+    };
+  }
+
+  /* 荒れ度に応じた買い方。実際の買い目もこの方針で組み立てる。 */
+  function upsetAdvice(level){
+    if(level === "high"){
+      return [
+        "軸を1頭に決め打ちせず、相手を5頭まで広げます。",
+        "単勝の比重を下げ、ワイド・三連複で面を取ります（1点あたりを薄く、点数を多く）。",
+        "推定勝率そのものが当てにならなくなる局面なので、投入額を3割減らします。",
+        "人気馬の単勝で取り返そうとしないでください。荒れるレースほど人気馬の期待値は下がります。"
+      ];
+    }
+    if(level === "mid"){
+      return [
+        "相手は3頭まで。ワイドを併用して取りこぼしを減らします。",
+        "投入額を1割減らします。",
+        "妙味馬（期待値1.10以上）が絡む買い目を1点だけ残します。"
+      ];
+    }
+    return [
+      "相手は2頭に絞ります。広げても必要オッズが上がるだけで割に合いません。",
+      "単勝・馬連を中心に、点数を絞って厚く買います。",
+      "三連複は出しません（点数のわりに必要オッズが高くなります）。"
+    ];
   }
 
   /* ============================================================
@@ -377,7 +467,8 @@
   function buildBets(rows, budget){
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
-      return {bets: [], value: null, dropped: [], grade: grade, spend: 0, budget: budget};
+      return {bets: [], value: null, dropped: [], grade: grade,
+              upset: rows.upset || null, spend: 0, budget: budget};
     }
 
     const probs = rows.map(x => x.prob);
@@ -403,11 +494,17 @@
     const push = (o) => { if(o.combos.length) bets.push(o); };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
 
+    /* 荒れるレースでは推定勝率そのものが当てにならなくなる。
+       単勝（1頭に賭ける）の比重を下げ、面で取る券種に回す。 */
+    const up = rows.upset || upsetRisk(rows.race, rows);
+    const tanRatio = up.level === "high" ? 0.18 : up.level === "mid" ? 0.25 : 0.30;
+
     // --- 単勝：期待値が1.0を超える馬だけ、期待値の高い順に最大2頭 ---
     const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
                     .sort((x, y) => y.ev - x.ev).slice(0, 2);
     tan.forEach((x, k) => {
-      push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k, ratio: k === 0 ? 0.30 : 0.15,
+      push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k,
+            ratio: k === 0 ? tanRatio : tanRatio / 2,
             combos: [String(x.h.num)], hit: x.prob, needOdds: 1 / x.prob, evKnown: x.ev,
             memo: `推定勝率 ${(x.prob*100).toFixed(1)}% × ${x.h.odds.toFixed(1)}倍 ＝ 期待値 ${x.ev.toFixed(2)}`});
     });
@@ -424,10 +521,9 @@
       }
     }
 
-    // --- 相手の広げ方は本命の信頼度で決める ---
+    // --- 相手の広げ方は荒れ度で決める（堅い2頭／やや荒れ3頭／荒れ5頭） ---
     const v = verdictOf(rows);
-    const width = v.width;                       // 相手にする頭数
-    const mates = rows.filter(x => x.h.num !== a).slice(0, width).map(x => x.h.num);
+    const mates = rows.filter(x => x.h.num !== a).slice(0, up.width).map(x => x.h.num);
 
     if(mates.length){
       const combos = mates.map(x => `${a}-${x}`);
@@ -442,19 +538,19 @@
       const w = mates.slice(0, 2);
       const combos = w.map(x => `${a}-${x}`);
       const hit = w.reduce((s, m) => s + wideProb(probs, idx[a], idx[m]), 0);
-      push({name: "ワイド", prio: 70, ratio: 0.13, combos: combos,
+      push({name: "ワイド", prio: 70, ratio: up.level === "high" ? 0.22 : 0.13, combos: combos,
             hit: hit, needOdds: need(hit, combos.length),
             memo: `堅めの押さえ。的中 ${(hit*100).toFixed(1)}%`});
     }
 
     // --- 三連複：点数が増えるほど必要オッズが上がるので、混戦のときだけ ---
-    if(mates.length >= 3 && n >= 4 && v.grade !== "solid"){
+    if(mates.length >= 3 && n >= 4 && up.level !== "low"){
       const tri = [], pairs = [];
       for(let i=0;i<mates.length;i++){
         for(let j=i+1;j<mates.length;j++){ tri.push(`${a}-${mates[i]}-${mates[j]}`); pairs.push([mates[i], mates[j]]); }
       }
       const hit = pairs.reduce((s, pr) => s + trioProb(probs, idx[a], idx[pr[0]], idx[pr[1]]), 0);
-      push({name: "三連複 軸1頭流し", prio: 60, ratio: 0.20, combos: tri,
+      push({name: "三連複 軸1頭流し", prio: 60, ratio: up.level === "high" ? 0.28 : 0.20, combos: tri,
             hit: hit, needOdds: need(hit, tri.length),
             memo: `${a} 軸 → ${mates.join("・")}。的中 ${(hit*100).toFixed(1)}%`});
     }
@@ -466,8 +562,11 @@
             memo: `期待値 ${value.ev.toFixed(2)} の ${value.h.num}番 を絡めた一撃`});
     }
 
-    // レース評価に応じて実際に使う額を決める
-    const spend = Math.max(100, Math.floor(budget * grade.stakeRatio / 100) * 100);
+    /* 実際に使う額。期待値の大きさ（レース評価）で決めたうえで、
+       荒れやすいレースではさらに絞る。推定勝率が当てにならなくなるためで、
+       点数を広げることと投入額を増やすことは別だという整理にしている。 */
+    const spend = Math.max(100,
+      Math.floor(budget * grade.stakeRatio * up.stakeScale / 100) * 100);
 
     // 1点100円が最低単位のため、点数が多いと予算を超えることがある。
     // 収まるまで優先度の低い券種から落とす。
@@ -487,7 +586,8 @@
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
-    return {bets: live, value, dropped, grade: grade, spend: spend, budget: budget};
+    return {bets: live, value, dropped, grade: grade, upset: up,
+            spend: spend, budget: budget};
   }
 
   /* ---------- 妙味・過剰人気の判定 ----------
@@ -512,22 +612,21 @@
   }
 
   /* ---------- 総評 ---------- */
-  /* 本命の信頼度。width は相手にする頭数で、そのまま買い目の点数を決める。
-     堅いレースで手広く流すと点数だけ増えて必要オッズが跳ね上がるため、
-     信頼度が高いほど相手を絞る。 */
+  /* 本命の信頼度。相手にする頭数は荒れ度（upsetRisk）が決めるので、
+     ここでは「勝ち馬をどれだけ絞り込めているか」だけを述べる。 */
   function verdictOf(rows){
     const topProb = rows[0].prob;
     const gap = rows.length > 1 ? rows[0].prob - rows[1].prob : topProb;
     if(topProb >= 0.33 && gap >= 0.12){
-      return {grade:"solid", width:2, title:"堅い決着が濃厚",
-              sub:"本命の信頼度が高いので、相手は2頭まで。手広く流すと点数だけ増えて割に合いません。"};
+      return {grade:"solid", title:"本命の信頼度は高い",
+              sub:`推定勝率 ${(topProb*100).toFixed(0)}% で、2番手を ${(gap*100).toFixed(0)}ポイント引き離しています。`};
     }
     if(topProb >= 0.22){
-      return {grade:"mid", width:3, title:"本命中心・やや堅め",
-              sub:"本命を軸に、相手は3頭までが妥当です。"};
+      return {grade:"mid", title:"本命中心・やや堅め",
+              sub:`推定勝率 ${(topProb*100).toFixed(0)}% の馬が抜けていますが、決め手には欠けます。`};
     }
-    return {grade:"open", width:4, title:"混戦・波乱含み",
-            sub:"上位の差が小さいレースです。相手を4頭に広げ、妙味馬を絡めます。"};
+    return {grade:"open", title:"勝ち馬を絞れない",
+            sub:`最上位でも推定勝率 ${(topProb*100).toFixed(0)}% しかなく、上位の差が小さいレースです。`};
   }
 
   /* ---------- 出走馬の既定値 ---------- */
@@ -555,6 +654,7 @@
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
+    upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
     MAX_FIELD: 18
   };

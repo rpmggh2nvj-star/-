@@ -229,7 +229,7 @@ async function main(){
   race.pace = (opts.pace && resolvePace(opts.pace)) || race.pace || auto.pace;
 
   const rows = E.analyze(race, parsed.horses);
-  const {bets, value, dropped, grade, spend} = E.buildBets(rows, race.budget);
+  const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, race.budget);
   const verdict = E.verdictOf(rows);
 
   /* ---- JSON出力 ---- */
@@ -282,6 +282,13 @@ async function main(){
   const gcol = grade.grade === "skip" ? C.red : grade.grade === "strong" ? C.green : C.yellow;
   console.log(`${C.b}${gcol}【${grade.title}】${C.r} ${grade.reason}`);
   console.log(`${C.dim}  ${grade.advice}${C.r}`);
+  console.log("");
+  // 荒れ度と、その場合の買い方
+  const ucol = upset.level === "high" ? C.red : upset.level === "mid" ? C.yellow : C.green;
+  console.log(`${C.b}${ucol}荒れ度 ${upset.label}（${upset.score}/100）${C.r}`);
+  upset.reasons.forEach(x => console.log(`${C.dim}  - ${x}${C.r}`));
+  console.log(`${C.dim}  この荒れ度での買い方:${C.r}`);
+  upset.advice.forEach(x => console.log(`${C.dim}    ・${x}${C.r}`));
   console.log("");
   console.log(`${C.b}${verdict.title}${C.r}  ${C.dim}${verdict.sub}${C.r}`);
   if(value){
