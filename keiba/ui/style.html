@@ -1,0 +1,521 @@
+<style>
+/* ============================================================
+   Turf Logic — トークン定義
+   配色は light / dark の両方をトークン単位で定義し、
+   コンポーネント側は必ずトークン経由で参照する。
+   ============================================================ */
+:root{
+  --sans:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic Medium","Yu Gothic","Noto Sans JP",Meiryo,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Courier New",monospace;
+
+  --paper:#F2F1EA;
+  --card:#FCFBF6;
+  --field:#FFFFFF;
+  --ink:#22261F;
+  --ink-soft:#6C7367;
+  --line:#DDDDD2;
+
+  --turf:#1F5C3D;
+  --turf-deep:#123A26;
+  --turf-tint:#DFEBE2;
+  --on-turf:#FFFFFF;
+
+  --hdr-a:#123A26;
+  --hdr-b:#1F5C3D;
+  --hdr-fg:#FFFFFF;
+
+  --gold:#B98C1E;
+  --gold-tint:#F6EBCC;
+  --gold-line:#E7D6A4;
+  --gold-ink:#7A5F14;
+
+  --red:#B2402F;
+  --red-tint:#F6DFDA;
+  --red-line:#E9C3BB;
+
+  --blue:#2F5B93;
+  --blue-tint:#DDE6F2;
+  --blue-line:#C3D3E8;
+
+  --chip-bg:#22261F;
+  --chip-fg:#FFFFFF;
+
+  --radius:14px;
+  --shadow:0 1px 2px rgba(34,38,31,.05), 0 8px 24px rgba(34,38,31,.06);
+}
+
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#161A15;
+    --card:#1E231C;
+    --field:#141811;
+    --ink:#E8EAE3;
+    --ink-soft:#9BA396;
+    --line:#333A31;
+
+    --turf:#6DB98C;
+    --turf-deep:#4E9B6E;
+    --turf-tint:#1F2E24;
+    --on-turf:#0F1A13;
+
+    --hdr-a:#10281B;
+    --hdr-b:#1A4630;
+    --hdr-fg:#E8EAE3;
+
+    --gold:#D6AC4A;
+    --gold-tint:#2E2612;
+    --gold-line:#4A3D1C;
+    --gold-ink:#D9C185;
+
+    --red:#E08872;
+    --red-tint:#3A211B;
+    --red-line:#5A2F26;
+
+    --blue:#8FB4E0;
+    --blue-tint:#1B2738;
+    --blue-line:#2C3F58;
+
+    --chip-bg:#E8EAE3;
+    --chip-fg:#161A15;
+
+    --shadow:0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.24);
+  }
+}
+
+/* 閲覧者のテーマ切替は media query より優先させる */
+:root[data-theme="light"]{
+  --paper:#F2F1EA; --card:#FCFBF6; --field:#FFFFFF;
+  --ink:#22261F; --ink-soft:#6C7367; --line:#DDDDD2;
+  --turf:#1F5C3D; --turf-deep:#123A26; --turf-tint:#DFEBE2; --on-turf:#FFFFFF;
+  --hdr-a:#123A26; --hdr-b:#1F5C3D; --hdr-fg:#FFFFFF;
+  --gold:#B98C1E; --gold-tint:#F6EBCC; --gold-line:#E7D6A4; --gold-ink:#7A5F14;
+  --red:#B2402F; --red-tint:#F6DFDA; --red-line:#E9C3BB;
+  --blue:#2F5B93; --blue-tint:#DDE6F2; --blue-line:#C3D3E8;
+  --chip-bg:#22261F; --chip-fg:#FFFFFF;
+  --shadow:0 1px 2px rgba(34,38,31,.05), 0 8px 24px rgba(34,38,31,.06);
+}
+:root[data-theme="dark"]{
+  --paper:#161A15; --card:#1E231C; --field:#141811;
+  --ink:#E8EAE3; --ink-soft:#9BA396; --line:#333A31;
+  --turf:#6DB98C; --turf-deep:#4E9B6E; --turf-tint:#1F2E24; --on-turf:#0F1A13;
+  --hdr-a:#10281B; --hdr-b:#1A4630; --hdr-fg:#E8EAE3;
+  --gold:#D6AC4A; --gold-tint:#2E2612; --gold-line:#4A3D1C; --gold-ink:#D9C185;
+  --red:#E08872; --red-tint:#3A211B; --red-line:#5A2F26;
+  --blue:#8FB4E0; --blue-tint:#1B2738; --blue-line:#2C3F58;
+  --chip-bg:#E8EAE3; --chip-fg:#161A15;
+  --shadow:0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.24);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  font-family:var(--sans);
+  background:var(--paper);
+  color:var(--ink);
+  line-height:1.7;
+  -webkit-text-size-adjust:100%;
+  padding-bottom:60px;
+}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+
+/* ---------- Layout ---------- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px;}
+
+header.site{
+  background:linear-gradient(135deg,var(--hdr-a),var(--hdr-b));
+  color:var(--hdr-fg);
+  padding:22px 0 20px;
+  margin-bottom:22px;
+  border-bottom:3px solid var(--gold);
+}
+header.site .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.logo{
+  width:44px;height:44px;flex:0 0 44px;
+  border:2px solid var(--gold);border-radius:50%;
+  display:grid;place-items:center;
+  font-size:20px;
+}
+h1{font-size:1.32rem;margin:0;font-weight:800;letter-spacing:.04em;}
+.tagline{font-size:.76rem;opacity:.82;margin:0;letter-spacing:.06em;}
+
+section.panel{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:18px;
+  margin-bottom:20px;
+}
+.panel-head{
+  display:flex;align-items:center;gap:10px;
+  margin:-2px 0 14px;flex-wrap:wrap;
+}
+.panel-head h2{
+  font-size:1.02rem;margin:0;font-weight:800;letter-spacing:.03em;
+  display:flex;align-items:center;gap:8px;
+}
+.panel-head h2::before{
+  content:"";width:5px;height:18px;border-radius:3px;background:var(--turf);
+}
+.panel-head .spacer{flex:1 1 auto;}
+.hint{font-size:.74rem;color:var(--ink-soft);}
+
+/* ---------- Form ---------- */
+.grid{display:grid;gap:12px;}
+.race-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--ink-soft);font-weight:700;letter-spacing:.04em;}
+input,select{
+  font-family:inherit;font-size:.92rem;color:var(--ink);
+  background:var(--field);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;width:100%;
+  transition:border-color .15s, box-shadow .15s;
+}
+input:focus-visible,select:focus-visible,button:focus-visible{
+  outline:2px solid var(--turf);outline-offset:2px;
+}
+input:focus,select:focus{outline:none;border-color:var(--turf);box-shadow:0 0 0 3px var(--turf-tint);}
+input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+
+button{
+  font-family:inherit;font-weight:700;font-size:.86rem;
+  border:1px solid var(--line);background:var(--field);color:var(--ink);
+  border-radius:9px;padding:8px 14px;cursor:pointer;
+  transition:transform .08s, background .15s, border-color .15s;
+}
+button:hover{border-color:var(--turf);}
+button:active{transform:translateY(1px);}
+button.ghost{background:transparent;color:var(--ink-soft);}
+button.danger{color:var(--red);border-color:var(--red-line);background:var(--red-tint);}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+.big-run{
+  width:100%;font-size:1.02rem;padding:14px;letter-spacing:.1em;
+  background:var(--turf);border-color:var(--turf);color:var(--on-turf);
+  box-shadow:0 4px 0 var(--turf-deep);
+}
+.big-run:hover{background:var(--turf-deep);border-color:var(--turf-deep);}
+.big-run:active{box-shadow:0 1px 0 var(--turf-deep);transform:translateY(3px);}
+
+/* ---------- Horse cards ---------- */
+#horseList{display:grid;gap:12px;}
+.horse{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:12px;
+  display:grid;gap:10px;
+}
+.horse-top{display:flex;align-items:center;gap:8px;}
+.umaban{
+  width:34px;height:34px;flex:0 0 34px;border-radius:8px;
+  display:grid;place-items:center;font-weight:800;
+  background:var(--chip-bg);color:var(--chip-fg);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
+}
+.horse-top input.name{flex:1 1 auto;font-weight:700;}
+.horse-fields{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));}
+.rm{flex:0 0 auto;padding:6px 10px;font-size:.78rem;}
+/* 前走の馬体重（今回の値を入れる目安） */
+.prevw{
+  font-weight:400;color:var(--ink-soft);opacity:.85;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;margin-left:4px;
+}
+/* 出走取消 */
+.scr{
+  flex:0 0 auto;display:flex;align-items:center;gap:4px;
+  font-size:.76rem;color:var(--ink-soft);white-space:nowrap;cursor:pointer;
+}
+.scr input{width:16px;height:16px;accent-color:var(--red);}
+.horse.scratched{opacity:.6;background:var(--paper);}
+.horse.scratched .horse-fields{filter:grayscale(1);}
+.horse.scratched .umaban{background:var(--line);color:var(--ink-soft);}
+.horse.scratched input.name{text-decoration:line-through;}
+.horse.scratched .scr{color:var(--red);font-weight:700;opacity:1;}
+
+/* ---------- Results ---------- */
+#results{display:none;}
+
+/* 買うべきレースか（いちばん先に目に入る位置） */
+.grade{
+  border-radius:12px;padding:14px 16px;margin-bottom:14px;
+  border:2px solid var(--line);background:var(--field);
+}
+.grade .g-title{
+  font-size:1.12rem;font-weight:800;letter-spacing:.06em;line-height:1.4;
+  display:flex;align-items:center;gap:8px;
+}
+.grade .g-title::before{
+  content:"";width:10px;height:10px;border-radius:50%;background:currentColor;flex:0 0 10px;
+}
+.grade .g-reason{font-size:.82rem;line-height:1.65;margin-top:4px;}
+.grade .g-advice{font-size:.78rem;color:var(--ink-soft);margin-top:4px;}
+.grade.g-skip  {border-color:var(--red);background:var(--red-tint);}
+.grade.g-skip   .g-title{color:var(--red);}
+.grade.g-small {border-color:var(--blue-line);background:var(--blue-tint);}
+.grade.g-small  .g-title{color:var(--blue);}
+.grade.g-normal{border-color:var(--gold-line);background:var(--gold-tint);}
+.grade.g-normal .g-title{color:var(--gold-ink);}
+.grade.g-strong{border-color:var(--turf);background:var(--turf-tint);}
+.grade.g-strong .g-title{color:var(--turf);}
+
+/* 荒れ度と、その場合の買い方 */
+.upset{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:12px 14px;margin-bottom:14px;
+}
+.upset .u-head{display:flex;align-items:baseline;gap:6px;}
+.upset .u-label{font-weight:800;font-size:.92rem;letter-spacing:.04em;}
+.upset .u-score{font-size:1.3rem;font-weight:800;margin-left:auto;}
+.upset .u-max{font-size:.72rem;color:var(--ink-soft);}
+.upset .u-bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:8px 0 10px;}
+.upset .u-bar span{display:block;height:100%;border-radius:4px;background:currentColor;}
+.upset ul{margin:0;padding-left:1.15em;}
+.upset li{font-size:.78rem;line-height:1.6;}
+.upset .u-reasons{color:var(--ink-soft);}
+.upset .u-advice{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px;font-size:.78rem;}
+.upset .u-advice b{display:block;margin-bottom:3px;}
+.upset.u-low   {color:var(--turf);}
+.upset.u-mid   {color:var(--gold-ink);}
+.upset.u-high  {color:var(--red);}
+.upset .u-reasons li,.upset .u-advice{color:var(--ink);}
+.upset .u-reasons li{color:var(--ink-soft);}
+
+/* データの保存 */
+.data-row{
+  display:flex;align-items:baseline;gap:10px;
+  border:1px solid var(--line);border-radius:10px;background:var(--field);padding:9px 12px;
+}
+.data-k{font-size:.72rem;color:var(--ink-soft);font-weight:700;letter-spacing:.04em;white-space:nowrap;}
+.data-v{font-size:.82rem;word-break:break-all;}
+.data-v.linked{color:var(--turf);font-weight:700;}
+.data-restore{
+  border:1px solid var(--line);border-radius:10px;background:var(--field);
+  padding:12px;display:grid;gap:8px;
+}
+.data-restore textarea{
+  font-family:var(--mono);font-size:.78rem;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;width:100%;resize:vertical;line-height:1.5;
+}
+.data-restore input[type=file]{font-size:.8rem;padding:6px;background:transparent;border:1px dashed var(--line);}
+label.chk{display:flex;align-items:center;gap:6px;font-size:.76rem;color:var(--ink-soft);cursor:pointer;}
+label.chk input{width:16px;height:16px;accent-color:var(--red);}
+
+/* 荒れ度ごとの成績 */
+.upset-stats{display:grid;gap:6px;margin:10px 0 4px;}
+.us-row{
+  display:grid;grid-template-columns:6.5em 1fr auto;gap:8px;align-items:center;
+  font-size:.74rem;border:1px solid var(--line);border-radius:9px;padding:6px 10px;background:var(--field);
+}
+.us-row .us-label{font-weight:700;}
+.us-row .us-bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;}
+.us-row .us-bar span{display:block;height:100%;background:var(--red);border-radius:3px;}
+.us-row .us-num{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-soft);}
+
+/* 買い目ごとの的中率・必要オッズ */
+.odds-need{
+  display:grid;grid-template-columns:auto 1fr auto 1fr;gap:2px 6px;align-items:baseline;
+  font-size:.72rem;border-top:1px dashed var(--line);padding-top:6px;
+}
+.odds-need .k{color:var(--ink-soft);font-weight:700;letter-spacing:.03em;}
+.odds-need .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:700;}
+.odds-need .v.ev-ok{color:var(--turf);}
+
+.verdict{
+  border-radius:12px;padding:12px 14px;margin-bottom:16px;
+  background:var(--gold-tint);border:1px solid var(--gold-line);
+  font-size:.88rem;font-weight:700;
+}
+.verdict .sub{font-weight:400;font-size:.8rem;color:var(--gold-ink);display:block;margin-top:2px;}
+
+.rank{
+  display:grid;
+  grid-template-columns:38px 34px 1fr auto;
+  gap:10px;align-items:center;
+  padding:11px 10px;border-radius:11px;border:1px solid var(--line);
+  background:var(--field);margin-bottom:8px;
+}
+.rank.top{border-color:var(--turf);background:var(--turf-tint);}
+.mark{
+  width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  font-size:1.15rem;font-weight:800;border:2px solid var(--line);color:var(--ink-soft);
+  background:var(--card);
+}
+.mark.m0{border-color:var(--red);color:var(--red);}
+.mark.m1{border-color:var(--blue);color:var(--blue);}
+.mark.m2{border-color:var(--gold);color:var(--gold);}
+.mark.m3{border-color:var(--ink-soft);}
+.rank .num{
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
+  background:var(--chip-bg);color:var(--chip-fg);font-weight:800;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
+}
+.rank .body{min-width:0;}
+.rank .nm{font-weight:700;font-size:.96rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.meta{font-size:.72rem;color:var(--ink-soft);display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:5px;}
+.bar span{display:block;height:100%;background:var(--turf);border-radius:3px;}
+.stat{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+.stat .p{font-size:1.02rem;font-weight:700;line-height:1.2;}
+.stat .ev{font-size:.72rem;color:var(--ink-soft);}
+.tag{
+  display:inline-block;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:5px;
+  border:1px solid transparent;letter-spacing:.04em;
+}
+.tag.value{background:var(--red-tint);color:var(--red);border-color:var(--red-line);}
+.tag.over{background:var(--blue-tint);color:var(--blue);border-color:var(--blue-line);}
+.tag.style{background:var(--paper);color:var(--ink-soft);border-color:var(--line);}
+
+/* ---------- Bets ---------- */
+.bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
+.bet{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);padding:12px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.bet h3{
+  margin:0;font-size:.82rem;letter-spacing:.06em;font-weight:800;
+  color:var(--turf);display:flex;align-items:center;gap:6px;
+}
+.bet h3 .pts{
+  margin-left:auto;font-size:.68rem;color:var(--ink-soft);font-weight:700;
+  background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:0 8px;
+}
+.bet .combo{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:700;word-break:break-word;}
+.bet .money{font-size:.74rem;color:var(--ink-soft);border-top:1px dashed var(--line);padding-top:6px;margin-top:auto;}
+.bet .money b{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;}
+
+.note{
+  font-size:.72rem;color:var(--ink-soft);
+  border-top:1px solid var(--line);margin-top:18px;padding-top:12px;
+}
+.empty{color:var(--ink-soft);font-size:.85rem;text-align:center;padding:20px 0;}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important;}
+}
+
+@media (max-width:560px){
+  h1{font-size:1.1rem;}
+  .horse-fields{grid-template-columns:repeat(2,1fr);}
+  .rank{grid-template-columns:32px 30px 1fr;grid-template-areas:"m n b" ". . s";gap:8px;}
+  .rank .mark{grid-area:m;width:32px;height:32px;font-size:1rem;}
+  .rank .num{grid-area:n;width:30px;height:30px;}
+  .rank .body{grid-area:b;}
+  .rank .stat{grid-area:s;text-align:left;display:flex;gap:10px;align-items:baseline;}
+}
+
+/* ---------- JSON読込 ---------- */
+.import{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:12px;margin-bottom:14px;display:grid;gap:8px;
+}
+.import textarea{
+  font-family:var(--mono);font-size:.8rem;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;width:100%;resize:vertical;line-height:1.5;
+}
+.import textarea:focus{outline:none;border-color:var(--turf);box-shadow:0 0 0 3px var(--turf-tint);}
+.import input[type=file]{font-size:.8rem;padding:6px;background:transparent;border:1px dashed var(--line);}
+button.primary{background:var(--turf);border-color:var(--turf);color:var(--on-turf);}
+button.primary:hover{background:var(--turf-deep);border-color:var(--turf-deep);}
+select:disabled,input:disabled{opacity:.55;cursor:not-allowed;}
+
+/* ---------- 情報量の注意書き ---------- */
+.info-note{
+  border-radius:12px;padding:10px 12px;margin:-6px 0 14px;
+  background:var(--blue-tint);border:1px solid var(--blue-line);
+  color:var(--blue);font-size:.78rem;line-height:1.6;
+}
+
+/* ---------- 読み取りパネルのタブと結果 ---------- */
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:10px;}
+button.tab{
+  border:none;background:transparent;color:var(--ink-soft);
+  border-bottom:2px solid transparent;border-radius:0;
+  padding:6px 10px;font-size:.82rem;
+}
+button.tab:hover{border-color:transparent transparent var(--line);}
+button.tab.on{color:var(--turf);border-bottom-color:var(--turf);}
+
+.import-result{
+  border-radius:10px;padding:10px 12px;font-size:.78rem;line-height:1.6;
+  border:1px solid var(--line);background:var(--paper);
+}
+.import-result.ok{background:var(--turf-tint);border-color:var(--turf);}
+.import-result.ng{background:var(--red-tint);border-color:var(--red-line);color:var(--red);}
+.import-result ul{margin:6px 0 0;padding-left:1.2em;}
+.import-result li{margin:2px 0;}
+
+/* ---------- 騎手評価 ---------- */
+#jockeyList{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
+.jockey{
+  display:grid;
+  grid-template-columns:1fr 88px;
+  grid-template-areas:"name sel" "horses sel";
+  gap:2px 10px;align-items:center;
+  border:1px solid var(--line);border-radius:10px;background:var(--field);padding:8px 10px;
+}
+.jk-name{grid-area:name;font-weight:700;font-size:.9rem;display:flex;align-items:center;gap:6px;}
+.jk-mark{
+  font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:4px;
+  background:var(--turf-tint);color:var(--turf);border:1px solid var(--turf);
+}
+.jk-horses{grid-area:horses;font-size:.72rem;color:var(--ink-soft);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;}
+.jockey select{grid-area:sel;align-self:center;width:88px;padding:6px 8px;text-align:center;}
+
+
+/* ---------- 騎手の成績・目安 ---------- */
+.jockey{grid-template-areas:"name sel" "horses sel" "stat stat";}
+.jk-stat{grid-area:stat;font-size:.7rem;color:var(--ink-soft);
+  border-top:1px dashed var(--line);margin-top:6px;padding-top:5px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+button.jk-sug{
+  font-size:.68rem;padding:2px 8px;border-radius:5px;
+  background:var(--turf-tint);color:var(--turf);border:1px solid var(--turf);font-weight:700;
+}
+details.guide{margin-top:14px;border-top:1px solid var(--line);padding-top:10px;}
+details.guide summary{font-size:.8rem;font-weight:700;color:var(--ink-soft);cursor:pointer;}
+.guide-table{border-collapse:collapse;width:100%;margin-top:10px;font-size:.76rem;}
+.guide-table th,.guide-table td{
+  border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top;
+}
+.guide-table th{background:var(--paper);color:var(--ink-soft);font-weight:700;white-space:nowrap;}
+
+/* ---------- 予想の記録 ---------- */
+.stat-row{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:14px;}
+.stat-row:empty{display:none;}
+.stat-tile{
+  border:1px solid var(--line);border-radius:10px;background:var(--field);padding:8px 10px;
+}
+.stat-tile .k{font-size:.68rem;color:var(--ink-soft);font-weight:700;letter-spacing:.03em;}
+.stat-tile .v{font-size:1.15rem;font-weight:700;line-height:1.3;}
+.stat-tile .s{font-size:.66rem;color:var(--ink-soft);}
+
+details.hist{
+  border:1px solid var(--line);border-radius:10px;background:var(--field);margin-bottom:8px;
+}
+details.hist summary{
+  padding:9px 12px;cursor:pointer;font-size:.8rem;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+details.hist[open] summary{border-bottom:1px solid var(--line);}
+.h-date{font-size:.7rem;color:var(--ink-soft);}
+.h-race{font-weight:700;}
+.h-top{color:var(--ink-soft);}
+.h-res{margin-left:auto;font-weight:700;}
+.hist-body{padding:10px 12px;overflow-x:auto;}
+.hist-table{border-collapse:collapse;width:100%;font-size:.74rem;white-space:nowrap;}
+.hist-table th,.hist-table td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;}
+.hist-table th{color:var(--ink-soft);font-weight:700;}
+.hist-table tr.won{background:var(--turf-tint);font-weight:700;}
+.res-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;}
+.res-form input{width:68px;}
+.res-form button{padding:6px 10px;font-size:.78rem;}
+
+/* ---------- 参照画像 ---------- */
+.ref-wrap{
+  border:1px solid var(--line);border-radius:10px;background:var(--field);
+  overflow:auto;max-height:60vh;
+}
+.ref-wrap img{display:block;width:100%;height:auto;}
+.import input[type=file]{width:100%;}
+</style>

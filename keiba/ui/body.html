@@ -1,0 +1,306 @@
+
+<header class="site">
+  <div class="wrap">
+    <div class="logo">🏇</div>
+    <div>
+      <h1>Turf Logic</h1>
+      <p class="tagline">競馬予想アプリ ／ 中央・南関対応 ／ 指数化・勝率推定・買い目提案</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- レース設定 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>レース設定</h2>
+      <div class="spacer"></div>
+      <div class="btn-row">
+        <button type="button" class="ghost" id="btnImport">出馬表を読み取る</button>
+        <button type="button" class="ghost" id="btnSample">サンプル読込</button>
+        <button type="button" class="ghost" id="btnSave">保存</button>
+        <button type="button" class="ghost" id="btnLoad">呼出</button>
+        <button type="button" class="ghost" id="btnClear">全消去</button>
+      </div>
+    </div>
+
+    <div class="import" id="importBox" hidden>
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab on" data-tab="paste" role="tab">貼り付け</button>
+        <button type="button" class="tab" data-tab="pdf" role="tab">PDF</button>
+        <button type="button" class="tab" data-tab="image" role="tab">画像</button>
+        <button type="button" class="tab" data-tab="json" role="tab">JSON</button>
+      </div>
+
+      <div id="tabPdf" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          競馬新聞や出馬表を保存したPDFを選ぶと、中の文字を読み取って自動入力します。
+          複数ページのPDFにも対応します。
+        </p>
+        <input type="file" id="pdfFile" accept=".pdf,application/pdf">
+        <p class="hint" id="pdfStatus" style="margin:0"></p>
+        <div class="btn-row">
+          <button type="button" class="ghost" id="btnImportClose3">閉じる</button>
+        </div>
+      </div>
+
+      <div id="tabImage" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          画像そのものから文字を読み取ることはできません（下の注意を参照）。
+          画像を選ぶと<b>見ながら入力できるように画面上部へ表示</b>します。
+          端末の文字認識でテキストにできる場合は「貼り付け」タブの方が確実です。
+        </p>
+        <input type="file" id="imageFile" accept="image/*">
+        <div class="btn-row">
+          <button type="button" class="ghost" id="btnImportClose4">閉じる</button>
+        </div>
+        <details class="guide">
+          <summary>端末の文字認識でテキストにする手順</summary>
+          <p class="hint" style="margin:8px 0 0">
+            <b>iPhone</b>：写真アプリで画像を開き、右下の「テキスト認識表示」（枠に囲まれた文字のマーク）を
+            タップ → 文字を長押し →「すべて選択」→「コピー」。<br>
+            <b>Android</b>：Googleフォトやレンズで画像を開き、テキストを選択 →「コピー」。<br>
+            コピーできたら「貼り付け」タブに貼って「読み取る」を押してください。
+          </p>
+        </details>
+      </div>
+
+      <div id="tabPaste">
+        <p class="hint" style="margin:0 0 8px">
+          出馬表のページで表の部分を選択してコピーし、ここに貼り付けて「読み取る」を押してください。
+          馬番・馬名・オッズ・斤量・馬体重・レース条件を自動で入力します。
+        </p>
+        <textarea id="pasteText" rows="6" placeholder="1  ハヤテノオージ  牡3  56.0  武豊  480(+2)  5.8&#10;2  ミドリノカゼ  牝4  54.0  川田将雅  462(-6)  28.0&#10;…"></textarea>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnPasteRun">読み取る</button>
+          <button type="button" class="ghost" id="btnImportClose">閉じる</button>
+        </div>
+      </div>
+
+      <div id="tabJson" hidden>
+        <p class="hint" style="margin:0 0 8px">
+          CLI（<span class="mono">node keiba/yosou.js 出馬表.html --out race.json</span>）が書き出したJSONを読み込みます。
+        </p>
+        <input type="file" id="importFile" accept=".json,application/json">
+        <textarea id="importText" rows="4" placeholder='{"race":{...},"horses":[...]}'></textarea>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnImportRun">読み込む</button>
+          <button type="button" class="ghost" id="btnImportClose2">閉じる</button>
+        </div>
+      </div>
+
+      <div class="import-result" id="importResult" hidden></div>
+    </div>
+
+    <div class="grid race-grid">
+      <label class="field">競馬場
+        <select id="track"></select>
+      </label>
+      <label class="field">コース
+        <select id="surface">
+          <option value="turf">芝</option>
+          <option value="dirt">ダート</option>
+        </select>
+      </label>
+      <label class="field" id="courseWrap" hidden>回り
+        <select id="course">
+          <option value="inner">内回り</option>
+          <option value="outer">外回り</option>
+        </select>
+      </label>
+      <label class="field">距離 (m)
+        <input type="number" id="distance" value="1800" min="800" max="4000" step="100">
+      </label>
+      <label class="field">馬場状態
+        <select id="condition">
+          <option value="0">良</option>
+          <option value="1">稍重</option>
+          <option value="2">重</option>
+          <option value="3">不良</option>
+        </select>
+      </label>
+      <label class="field">想定ペース
+        <select id="pace">
+          <option value="high">ハイ</option>
+          <option value="mid" selected>平均</option>
+          <option value="slow">スロー</option>
+        </select>
+      </label>
+      <label class="field">予算 (円)
+        <input type="number" id="budget" value="5000" min="100" step="500">
+      </label>
+    </div>
+    <p class="hint" style="margin:10px 0 0">
+      <span id="trackNote"></span>
+      <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
+    </p>
+  </section>
+
+  <!-- 参照画像 -->
+  <section class="panel" id="refPanel" hidden>
+    <div class="panel-head">
+      <h2>参照画像</h2>
+      <span class="hint">入力しながら見比べられます</span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnRefClose">閉じる</button>
+    </div>
+    <div class="ref-wrap"><img id="refImage" alt="読み込んだ出馬表の画像"></div>
+  </section>
+
+  <!-- 出走馬 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>出走馬</h2>
+      <span class="hint" id="countLabel">0頭</span>
+      <div class="spacer"></div>
+      <div class="btn-row">
+        <button type="button" id="btnAdd">＋ 1頭追加</button>
+        <button type="button" class="ghost" id="btnAdd5">＋ 5頭</button>
+      </div>
+    </div>
+    <div id="horseList"></div>
+    <p class="empty" id="emptyMsg">出走馬を追加してください。「サンプル読込」でも試せます。</p>
+  </section>
+
+  <!-- 騎手評価 -->
+  <section class="panel" id="jockeyPanel" hidden>
+    <div class="panel-head">
+      <h2>騎手評価</h2>
+      <span class="hint" id="jockeyCount"></span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnJockeyReset">記憶を消す</button>
+    </div>
+    <p class="hint" style="margin:-6px 0 12px">
+      一度つけた評価はこの端末に記憶され、次回以降その騎手が出てきたら自動で入ります。
+      同じ騎手が乗る複数の馬にまとめて反映されます。
+    </p>
+    <div id="jockeyList"></div>
+    <details class="guide">
+      <summary>評価の目安</summary>
+      <table class="guide-table" id="gradeGuide"></table>
+      <p class="hint" style="margin:8px 0 0">
+        記録した結果から各騎手の成績を集計し、10回以上の騎乗があれば評価を提案します。
+        提案は一覧の各行に出ます。それ未満のうちは、勝率はほとんど偶然で決まるため提案しません。
+      </p>
+    </details>
+  </section>
+
+  <!-- データの保存 -->
+  <section class="panel" id="dataPanel">
+    <div class="panel-head">
+      <h2>データの保存</h2>
+      <span class="hint" id="dataCount"></span>
+      <div class="spacer"></div>
+      <button type="button" class="ghost" id="btnDataToggle">開く</button>
+    </div>
+    <div id="dataBody" hidden>
+      <p class="hint" style="margin:0 0 12px">
+        予想の記録・騎手評価は、ふだんはこの端末の中にしかありません。
+        ブラウザの履歴を消す、端末を替える、といったときに失われます。
+        <b>端末の外へ保存しておくと、あとから戻せます。</b>
+      </p>
+
+      <div class="data-row">
+        <div class="data-k">保存先</div>
+        <div class="data-v" id="linkState">まだ決めていません</div>
+      </div>
+      <div class="btn-row" style="margin:10px 0 4px">
+        <button type="button" class="primary" id="btnBackupSave">保存先を選んで保存</button>
+        <button type="button" class="ghost" id="btnBackupNow" hidden>いまの内容で上書き保存</button>
+        <button type="button" class="ghost" id="btnBackupUnlink" hidden>保存先を解除</button>
+      </div>
+      <p class="hint" id="linkNote" style="margin:0 0 14px"></p>
+
+      <div class="btn-row" style="margin:0 0 14px">
+        <button type="button" class="ghost" id="btnBackupDownload">ファイルに書き出す</button>
+        <button type="button" class="ghost" id="btnBackupShare" hidden>他のアプリへ送る</button>
+        <button type="button" class="ghost" id="btnBackupCopy">文字としてコピー</button>
+      </div>
+
+      <div class="data-restore">
+        <div class="data-k" style="margin-bottom:6px">戻す</div>
+        <input type="file" id="backupFile" accept=".json,application/json">
+        <textarea id="backupText" rows="3" placeholder="コピーしたバックアップの文字を貼り付けることもできます"></textarea>
+        <label class="chk">
+          <input type="checkbox" id="restoreReplace">
+          いまのデータを消して、バックアップの内容だけにする
+        </label>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnRestoreRun">読み込む</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0">
+          既定では<b>足すだけ</b>です。いまの記録は消えません。同じレースの記録が
+          両方にある場合は、着順が入っている方を残します。
+        </p>
+      </div>
+
+      <div class="import-result" id="dataResult" hidden></div>
+
+      <details class="guide">
+        <summary>どこに保存できますか</summary>
+        <div class="hint" style="margin:8px 0 0">
+          <b>「保存先を選んで保存」</b>が使える端末（Android の Chrome、パソコン）では、
+          Googleドライブや端末のフォルダを保存先に指定できます。一度決めれば、
+          以後は<b>同じファイルへ自動で上書き</b>されます。<br>
+          <b>iPhone / iPad</b> では「他のアプリへ送る」から、ファイルApp・iCloudドライブ・
+          Googleドライブ・メールなどへ渡せます。<br>
+          うまくいかない場合は「文字としてコピー」でメモアプリに貼り付けても構いません。
+          戻すときは、その文字を上の欄に貼り付けてください。
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 予想の記録 -->
+  <section class="panel" id="historyPanel">
+    <div class="panel-head">
+      <h2>予想の記録</h2>
+      <span class="hint" id="histCount"></span>
+      <div class="spacer"></div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:6px">
+        <span>競馬場</span>
+        <select id="histTrack" style="width:auto"></select>
+      </label>
+    </div>
+    <div class="stat-row" id="histStats"></div>
+    <div class="upset-stats" id="upsetStats"></div>
+    <div id="histList"></div>
+    <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
+    <p class="hint" style="margin:12px 0 0">
+      着順を入れると的中率が集計され、騎手評価の提案にも使われます。
+      記録はこの端末にのみ保存されます（外部には送信しません）。
+    </p>
+  </section>
+
+  <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
+
+  <!-- 結果 -->
+  <section class="panel" id="results" style="margin-top:20px">
+    <div class="panel-head"><h2>予想結果</h2><span class="hint" id="resultRace"></span></div>
+    <div class="grade" id="gradeBox"></div>
+    <div class="upset" id="upsetBox"></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="info-note" id="infoNote" hidden></div>
+    <div id="rankList"></div>
+    <p class="hint" style="margin:10px 2px 0">
+      <b>指数</b>＝オッズを除いた能力評価。<b>推定勝率</b>＝指数にオッズ（市場評価）を加味した最終予想。
+      <b>市場比</b>が 1.00 を超える馬は、人気以上に評価できる＝妙味のある馬です。
+    </p>
+
+    <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
+    <div class="bets" id="betList"></div>
+    <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
+
+    <div class="btn-row" style="margin-top:16px">
+      <button type="button" class="primary" id="btnSaveRace">この予想を記録する</button>
+      <span class="hint" id="saveNote" style="align-self:center"></span>
+    </div>
+
+    <p class="note">
+      本アプリの指数・推定勝率は、入力値をもとにした簡易モデルによる計算結果です。
+      実際の的中を保証するものではありません。馬券の購入は自己責任・余裕資金の範囲で行ってください（20歳未満は購入できません）。
+    </p>
+  </section>
+
+</div>
