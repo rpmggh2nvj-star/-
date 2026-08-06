@@ -83,9 +83,20 @@ function race(){
     bankroll: numOr($("bankroll").value, 0),
     stakePct: numOr($("stakePct").value, 2),
     policy: $("policy").value,
-    sanrenpuku: $("useSanrenpuku").checked,
-    sanrentan: $("useSanrentan").checked
+    kinds: kindsOf()
   };
+}
+
+/* ---------- 買う券種 ----------
+   券種ごとに控除率も、推定のしやすさも違う。どれを買うかは
+   道具が決め切る話ではないので、選べるようにしてある。 */
+const KIND_BOX = {tan:"kindTan", fuku:"kindFuku", umaren:"kindUmaren",
+                  wide:"kindWide", sanrenpuku:"kindSanrenpuku", sanrentan:"kindSanrentan"};
+
+function kindsOf(){
+  const o = {};
+  Object.keys(KIND_BOX).forEach(k => { o[k] = $(KIND_BOX[k]).checked; });
+  return o;
 }
 /* ---------- 1レースに使う額 ----------
    資金の総額を入れてあれば、その割合で決める。金額で決め打ちすると、
@@ -123,10 +134,36 @@ function applyRace(r){
   if(r.stakePct != null) $("stakePct").value = r.stakePct;
   syncBankroll();
   if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
-  $("useSanrenpuku").checked = !!r.sanrenpuku;
-  $("useSanrentan").checked  = !!r.sanrentan;
+  /* 更新前の保存には kinds が無く、三連複・三連単だけが真偽値で入っている */
+  const k = r.kinds || {umaren:true, wide:true, tan:true, fuku:true,
+                        sanrenpuku: !!r.sanrenpuku, sanrentan: !!r.sanrentan};
+  Object.keys(KIND_BOX).forEach(key => {
+    if(k[key] != null) $(KIND_BOX[key]).checked = !!k[key];
+  });
+  syncKindNote();
   syncPolicyNote();
   syncTrackUI();
+}
+
+/* 選んだ券種について、知っておくべきことを出す。
+   人工のレースで測った値をそのまま書いてある。 */
+function syncKindNote(){
+  const k = kindsOf();
+  const msg = [];
+  if(!k.tan && !k.fuku && !k.umaren && !k.wide && !k.sanrenpuku && !k.sanrentan){
+    msg.push("券種が1つも選ばれていません。");
+  }
+  if(k.wide && k.umaren){
+    msg.push("ワイドは馬連の2〜3倍当たります（同じ3頭のBOXで 47.4% 対 22.8%）。" +
+             "ただし控除率はどちらも22.5%で、回収率は 76.2% 対 75.3% とほぼ同じでした。" +
+             "増えるのは当たる回数で、取り分ではありません。");
+  } else if(k.wide && !k.umaren){
+    msg.push("ワイドは当たる回数が多い券種です。回収率は馬連とほぼ同じ（控除率が同じ22.5%）で、" +
+             "違うのは的中率と1点あたりの配当です。");
+  }
+  if(k.sanrenpuku) msg.push("三連複は控除率25%。当たりにくく、推定の誤差も大きくなります。");
+  if(k.sanrentan) msg.push("三連単は控除率27.5%で最も高く、推定の誤差も最大です。");
+  $("kindNote").textContent = msg.join(" ");
 }
 
 /* 選んだ買い方が何をするのかを、選んだ場で見せる */
@@ -412,10 +449,7 @@ function run(){
   // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
   E.fillBreakEven(r, hs, rows, tn);
   const {bets, value, dropped, grade, upset, spend, policy, hitChance} =
-    E.buildBets(rows, r.budget, {
-      policy: r.policy,
-      extras: {sanrenpuku: r.sanrenpuku, sanrentan: r.sanrentan}
-    });
+    E.buildBets(rows, r.budget, {policy: r.policy, kinds: r.kinds});
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -558,8 +592,8 @@ function run(){
             ? `<span class="k">推定期待値</span><span class="v ${x.evEst >= 1 ? "ev-ok" : "ev-ng"}">${x.evEst.toFixed(2)}</span>`
             : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
-      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割っています。当たる回数を支えるために買う1点で、
-        この点だけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
+      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割る点を含みます。当たる回数を支えるために買う点で、
+        そこだけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
         <tr><th>買い目</th><th>金額</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
@@ -586,9 +620,10 @@ function run(){
   }
   const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
   if(cutN) notes.push(`割の合わない ${cutN}点 は、はじめから外してあります。`);
-  if(bets.length && !r.sanrenpuku && !r.sanrentan){
-    notes.push("三連複・三連単は出していません。控除率が高いうえ推定の誤差も大きく、" +
-               "検証では的中率でも回収率でも複勝・ワイドに負けたためです。買う場合は上のチェックを入れてください。");
+  const offKinds = Object.keys(E.KIND_LABEL)
+    .filter(k => !r.kinds[k]).map(k => E.KIND_LABEL[k]);
+  if(bets.length && offKinds.length){
+    notes.push(`選んでいない券種（${offKinds.join("・")}）は出していません。`);
   }
   $("droppedNote").textContent = notes.join(" ");
 
@@ -772,6 +807,7 @@ function loadSample(){
 
 /* ---------- イベント ---------- */
 $("policy").addEventListener("change", syncPolicyNote);
+Object.keys(KIND_BOX).forEach(k => $(KIND_BOX[k]).addEventListener("change", syncKindNote));
 $("bankroll").addEventListener("input", syncBankroll);
 $("stakePct").addEventListener("change", syncBankroll);
 $("track").addEventListener("change", syncTrackUI);
@@ -922,6 +958,7 @@ $("importFile").addEventListener("change", e => {
 buildTrackSelect();
 syncTrackUI();
 syncPolicyNote();
+syncKindNote();
 syncBankroll();
 addHorses(6);
 

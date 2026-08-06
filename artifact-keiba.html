@@ -400,6 +400,15 @@ label.inline input{margin:0;}
 .hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
 .odds-need .v.ev-ng{color:var(--red);}
 input.derived{background:var(--paper);color:var(--ink-soft);}
+.kind-pick{
+  display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;
+  margin-top:12px;padding:9px 12px;border:1px solid var(--line);
+  border-radius:11px;background:var(--field);font-size:.78rem;
+}
+.kind-pick .kp-label{
+  font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);
+  margin-right:12px;flex:0 0 auto;
+}
 .bankplan{
   border:1px solid var(--line);background:var(--field);
   border-radius:12px;padding:10px 13px;margin-bottom:10px;
@@ -754,11 +763,16 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
       </label>
     </div>
     <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
-    <p class="hint" style="margin:6px 0 0">
-      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
-      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
-      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
-    </p>
+    <div class="kind-pick">
+      <span class="kp-label">買う券種</span>
+      <label class="inline"><input type="checkbox" id="kindTan" checked> 単勝</label>
+      <label class="inline"><input type="checkbox" id="kindFuku" checked> 複勝</label>
+      <label class="inline"><input type="checkbox" id="kindUmaren" checked> 馬連</label>
+      <label class="inline"><input type="checkbox" id="kindWide" checked> ワイド</label>
+      <label class="inline"><input type="checkbox" id="kindSanrenpuku"> 三連複</label>
+      <label class="inline"><input type="checkbox" id="kindSanrentan"> 三連単</label>
+    </div>
+    <p class="hint" id="kindNote" style="margin:6px 0 0"></p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
@@ -1469,6 +1483,39 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     return Math.max(100, Math.floor(total / points / 100) * 100);
   }
 
+  /* ---------- 1点ごとの金額を配る ----------
+     share 円を重み w に比例して100円単位で配る。合計は share を超えない。
+
+     素朴に「share × 比率」を100円に丸めると、比率の小さい点まで
+     最低100円が要るぶん合計が share を上回る。以前はこの超過を
+     「券種ごと落とす」ことで吸収していたため、利用者が選んだ馬連が
+     黙って消えることがあった。券種を落とすのではなく点数を減らす。
+
+     手順は、まず全点に100円ずつ置き、残りを比率で配る（最大剰余法）。
+     全点に100円すら置けないときは、重みの大きい点から置ける数だけ残す。 */
+  function allocate(share, weights){
+    const slots = Math.floor(share / 100);
+    const n = weights.length;
+    if(!(slots > 0) || !n) return null;
+
+    let idx = weights.map((v, i) => i);
+    if(slots < n){
+      idx = idx.slice().sort((a, b) => weights[b] - weights[a]).slice(0, slots)
+               .sort((a, b) => a - b);
+    }
+    const m = idx.length;
+    const w = idx.map(i => Math.max(0, weights[i]));
+    const sum = w.reduce((a, b) => a + b, 0);
+    const extra = slots - m;                       // 100円ずつ置いた残り
+    const base = w.map(v => sum > 0 ? extra * v / sum : extra / m);
+    const add = base.map(v => Math.floor(v));
+    let used = add.reduce((a, b) => a + b, 0);
+    const rest = base.map((v, i) => ({i: i, r: v - add[i]}))
+                     .sort((a, b) => b.r - a.r);
+    for(let k = 0; used < extra; k++, used++) add[rest[k % m].i]++;
+    return {keep: idx, units: add.map(v => (v + 1) * 100)};
+  }
+
   /* ============================================================
      買い下限オッズ
      ------------------------------------------------------------
@@ -1737,6 +1784,23 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       }
     }
   };
+  /* ---------- 券種ごとの性質 ----------
+     「ワイドは馬連の3倍の回収率が見込める」と言われることがあるが、
+     3倍になるのは回収率ではなく的中率である。同じ上位3頭のBOXで
+     券種だけを変えて6000レース測ると、こうなった。
+
+       馬連 3点BOX  … レース的中 22.8%  回収率 75.3%
+       ワイド 3点BOX … レース的中 47.4%  回収率 76.2%
+       馬連 上位2頭1点 … 的中 10.5%  回収率 78.3%
+       ワイド 上位2頭1点 … 的中 25.3%  回収率 77.7%
+
+     的中率は2〜3倍になるが、回収率はほぼ同じところへ寄る。
+     控除率が馬連もワイドも 22.5% で同じだからで、
+     長く買えば平均的な買い手の取り分は 77.5% に近づく。
+     もし回収率が3倍（＝232%）なら主催者が赤字になるので、
+     仕組みの上でありえない。 */
+  const KIND_LABEL = {tan:"単勝", fuku:"複勝", umaren:"馬連", wide:"ワイド",
+                      sanrenpuku:"三連複", sanrentan:"三連単"};
   const POLICY_KEYS = ["value", "balance", "hit"];
   const POLICY_DEFAULT = "balance";
   function policyOf(key){ return POLICIES[key] || POLICIES[POLICY_DEFAULT]; }
@@ -1809,10 +1873,21 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
          必要オッズ = 点数 ÷ 的中確率の合計
 
      で決まる。実際のオッズがこれを下回るなら、その買い目は見送るべきである。 */
+  /* 買う券種。方針が既定で使うものに、利用者が明示した分を足し引きする。
+     opt.kinds で明示されていればそれが優先。何も指定がなければ従来どおり
+     （方針の kinds ＋ opt.extras）になる。 */
+  const ALWAYS_ON = {tan: true, fuku: true};   // 単勝・複勝は明示して切らない限り出す
+  function kindOn(pol, opt, kind){
+    if(opt.kinds && opt.kinds[kind] != null) return !!opt.kinds[kind];
+    if(ALWAYS_ON[kind]) return true;
+    if(pol.kinds && pol.kinds[kind]) return true;
+    return !!(opt.extras && opt.extras[kind]);
+  }
+
   function buildBets(rows, budget, opt){
     opt = opt || {};
     const pol = policyOf(opt.policy);
-    const extras = opt.extras || {};       // {sanrenpuku:true, sanrentan:true}
+    const use = (kind) => kindOn(pol, opt, kind);
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
       return {bets: [], value: null, dropped: [], grade: grade, policy: pol,
@@ -1835,6 +1910,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     const push = (o) => {
       if(!o.combos.length) return;
       if(o.cut == null) o.cut = 0;      // 候補から外した点数（無ければ0）
+      o.all = o.combos.slice();         // 予算で削る前の全点（配分の元になる）
       bets.push(o);
     };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
@@ -1860,7 +1936,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        単勝だけは実際のオッズから期待値をそのまま計算できる（推定ではない）。
        だから期待値1.0未満は買わない。ただし選ぶ順は期待値ではなく
        資金の増え方にする。期待値順だと、勝ち目の薄い人気薄が上に来てしまう。 */
-    const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
+    const tan = (use("tan") ? rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV) : [])
                     .sort((x, y) => growth(y.prob, y.ev) - growth(x.prob, x.ev))
                     .slice(0, 2);
     tan.forEach((x, k) => {
@@ -1881,7 +1957,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        以前は「3着以内50%以上かつ期待値1.0以上」という条件で1頭だけ選んでいた。
        この条件はほとんどのレースで誰も通らず、いちばん当たる券種が
        3レースに1回しか出ていなかった。 */
-    const places = placePositions(n);
+    const places = use("fuku") ? placePositions(n) : 0;
     if(places){
       const cands = rows.map(x => {
         const i = idx[x.h.num];
@@ -1907,7 +1983,6 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
            .slice(0, pol.fukuValue).forEach(o => takeN.push(o));
       takeN.forEach((o, k) => {
         push({name: `複勝（${places}着まで）` + (k ? `（${k+1}頭目）` : ""),
-              underEv: o.ev < BUY_EV,
               kind: "fuku", prio: 90 - k, ratio: (k ? 0.10 : 0.16) * pol.tanScale,
               combos: [String(o.x.h.num)], hit: o.hit, needOdds: need(o.hit, 1),
               evEst: o.ev,
@@ -1986,7 +2061,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     // 荒れるレースは相手を広げる（ただし投入額は upset.stakeScale で絞る）
     const spread = up.level === "high" ? 2 : up.level === "mid" ? 1 : 0;
     const opts = (kind) => {
-      const o = pol.kinds[kind] || EXTRA_KINDS[kind];
+      if(!use(kind)) return null;
+      const o = (pol.kinds && pol.kinds[kind]) || EXTRA_KINDS[kind];
       if(!o) return null;
       return Object.assign({}, o, {
         max: o.max + spread,
@@ -2022,7 +2098,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     }
 
     // --- 馬連（1・2着の組。順不同） ---
-    if(opts("umaren")){
+    if(n >= 3 && opts("umaren")){
       shape(selectPoints(pairAll("umaren", quinellaProb), opts("umaren")),
             "馬連", "umaren", 70, opts("umaren").ratio, "資金の増え方で選んだ組み合わせ");
     }
@@ -2031,7 +2107,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        控除率25%。推定の誤差も大きく、人工のレースでは上位4頭BOXでも
        的中15%・回収60%と、複勝・ワイドに両方の指標で負けた。
        既定では出さない。明示的に指定されたときだけ、荒れるレースに限って出す。 */
-    if(n >= 4 && extras.sanrenpuku && up.level !== "low"){
+    if(n >= 4 && opts("sanrenpuku")){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = x+1; y < cand.length; y++)
@@ -2047,7 +2123,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     /* --- 三連単（着順まで当てる） ---
        控除率27.5%と最も高く、推定は Harville の仮定にいちばん強く依存する。
        人工のレースでは上位3頭BOXで的中6%・回収44%。既定では出さない。 */
-    if(n >= 4 && extras.sanrentan){
+    if(n >= 4 && opts("sanrentan")){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = 0; y < cand.length; y++)
@@ -2062,7 +2138,14 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
             g.kept.length ? `資金の増え方で選んだ並び（最良 ${g.kept[0].combo} で推定期待値 ${g.kept[0].ev.toFixed(2)}）` : "");
     }
 
-    /* 券種としての推定期待値。同額で買うので、1点ごとの期待値の平均になる。 */
+    /* 推定期待値が1.0を割る点を含む券種には印を付ける。
+       買い方によっては当たる回数を支えるためにそれを買うが、
+       買っていることは必ず画面に出す。 */
+    bets.forEach(b => {
+      b.underEv = (b.points || []).some(pt => pt.ev != null && pt.ev < BUY_EV);
+    });
+
+    /* 券種としての推定期待値。1点ごとの期待値の平均になる。 */
     bets.forEach(b => {
       if(b.evEst != null || b.evKnown != null) return;
       const es = (b.points || []).map(pt => pt.ev).filter(v => v != null);
@@ -2080,30 +2163,49 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     /* 1点ごとの金額。同額で並べるのではなく、資金がいちばん速く増える割合
        （Kelly の f）に比例させる。同じ予算でも、当たりやすく割の良い点に
        厚く乗るので、当たったときの取り返しが大きくなる。 */
+    /* 荒れるレースでは単勝の比重を必ず下げる。
+       比率だけ下げても、他の券種が条件を満たさず出てこなかった場合に
+       単勝だけが残って比重が上がってしまう。上限を置いて確実に下げる。 */
+    const capTan = up.level === "high" ? 0.25 : up.level === "mid" ? 0.35 : 1;
+    if(capTan < 1){
+      const tanSum   = bets.filter(x => x.kind === "tan").reduce((a, x) => a + x.ratio, 0);
+      const otherSum = bets.filter(x => x.kind !== "tan").reduce((a, x) => a + x.ratio, 0);
+      if(tanSum > 0 && otherSum > 0 && tanSum / (tanSum + otherSum) > capTan){
+        const scale = (capTan / (1 - capTan)) * otherSum / tanSum;
+        bets.forEach(x => { if(x.kind === "tan") x.ratio *= scale; });
+      }
+    }
+
     let live = bets.slice();
     const dropped = [];
     for(;;){
       const ratioSum = live.reduce((s, x) => s + x.ratio, 0);
       live.forEach(x => {
         const share = spend * (x.ratio / ratioSum);
-        const pts = x.points || [];
-        const fs = pts.length === x.combos.length
-          ? pts.map(p => (p && p.f > 0) ? p.f : 0) : [];
-        const fSum = fs.reduce((a, b) => a + b, 0);
-        if(fSum > 0){
-          x.units = fs.map(f => Math.max(100, Math.round(share * (f / fSum) / 100) * 100));
-        } else {
-          const u = unitAmount(share, x.combos.length);
-          x.units = x.combos.map(() => u);
-        }
+        const pts = (x.points && x.points.length === x.all.length) ? x.points : null;
+        const w = x.all.map((c, k) => {
+          const f = pts ? pts[k].f : 0;
+          return (f > 0) ? f : 1e-6;      // 増え方が出せない点も等分では残す
+        });
+        const a = allocate(share, w);
+        if(!a){ x.combos = []; x.units = []; x.total = 0; x.unit = 0; return; }
+        x.combos = a.keep.map(i => x.all[i]);
+        x.points = pts ? a.keep.map(i => pts[i]) : x.points;
+        x.units  = a.units;
         x.unit = Math.min.apply(null, x.units);          // 表示用の最小単位
-        x.total = x.units.reduce((a, b) => a + b, 0);
+        x.total = x.units.reduce((a2, b) => a2 + b, 0);
         (x.points || []).forEach((p, k) => { p.yen = x.units[k]; });
       });
-      const used = live.reduce((s, x) => s + x.total, 0);
-      if(used <= spend || live.length <= 1) break;
-      let worst = 0;
-      for(let i=1;i<live.length;i++) if(live[i].prio < live[worst].prio) worst = i;
+      /* 点数で吸収しても1点も置けなかった券種だけ落とす。
+         優先度の低いものから外して、残りに予算を回す。 */
+      const empty = live.filter(x => !x.combos.length);
+      if(!empty.length) break;
+      let worst = -1;
+      live.forEach((x, i) => {
+        if(x.combos.length) return;
+        if(worst < 0 || x.prio < live[worst].prio) worst = i;
+      });
+      if(worst < 0 || live.length <= 1) break;
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
@@ -2182,7 +2284,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
     breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
     kellyFraction, growth, hitChance, longestMissRun, bankrollPlan,
-    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
+    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS, kindOn, KIND_LABEL,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
@@ -3988,9 +4090,20 @@ function race(){
     bankroll: numOr($("bankroll").value, 0),
     stakePct: numOr($("stakePct").value, 2),
     policy: $("policy").value,
-    sanrenpuku: $("useSanrenpuku").checked,
-    sanrentan: $("useSanrentan").checked
+    kinds: kindsOf()
   };
+}
+
+/* ---------- 買う券種 ----------
+   券種ごとに控除率も、推定のしやすさも違う。どれを買うかは
+   道具が決め切る話ではないので、選べるようにしてある。 */
+const KIND_BOX = {tan:"kindTan", fuku:"kindFuku", umaren:"kindUmaren",
+                  wide:"kindWide", sanrenpuku:"kindSanrenpuku", sanrentan:"kindSanrentan"};
+
+function kindsOf(){
+  const o = {};
+  Object.keys(KIND_BOX).forEach(k => { o[k] = $(KIND_BOX[k]).checked; });
+  return o;
 }
 /* ---------- 1レースに使う額 ----------
    資金の総額を入れてあれば、その割合で決める。金額で決め打ちすると、
@@ -4028,10 +4141,36 @@ function applyRace(r){
   if(r.stakePct != null) $("stakePct").value = r.stakePct;
   syncBankroll();
   if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
-  $("useSanrenpuku").checked = !!r.sanrenpuku;
-  $("useSanrentan").checked  = !!r.sanrentan;
+  /* 更新前の保存には kinds が無く、三連複・三連単だけが真偽値で入っている */
+  const k = r.kinds || {umaren:true, wide:true, tan:true, fuku:true,
+                        sanrenpuku: !!r.sanrenpuku, sanrentan: !!r.sanrentan};
+  Object.keys(KIND_BOX).forEach(key => {
+    if(k[key] != null) $(KIND_BOX[key]).checked = !!k[key];
+  });
+  syncKindNote();
   syncPolicyNote();
   syncTrackUI();
+}
+
+/* 選んだ券種について、知っておくべきことを出す。
+   人工のレースで測った値をそのまま書いてある。 */
+function syncKindNote(){
+  const k = kindsOf();
+  const msg = [];
+  if(!k.tan && !k.fuku && !k.umaren && !k.wide && !k.sanrenpuku && !k.sanrentan){
+    msg.push("券種が1つも選ばれていません。");
+  }
+  if(k.wide && k.umaren){
+    msg.push("ワイドは馬連の2〜3倍当たります（同じ3頭のBOXで 47.4% 対 22.8%）。" +
+             "ただし控除率はどちらも22.5%で、回収率は 76.2% 対 75.3% とほぼ同じでした。" +
+             "増えるのは当たる回数で、取り分ではありません。");
+  } else if(k.wide && !k.umaren){
+    msg.push("ワイドは当たる回数が多い券種です。回収率は馬連とほぼ同じ（控除率が同じ22.5%）で、" +
+             "違うのは的中率と1点あたりの配当です。");
+  }
+  if(k.sanrenpuku) msg.push("三連複は控除率25%。当たりにくく、推定の誤差も大きくなります。");
+  if(k.sanrentan) msg.push("三連単は控除率27.5%で最も高く、推定の誤差も最大です。");
+  $("kindNote").textContent = msg.join(" ");
 }
 
 /* 選んだ買い方が何をするのかを、選んだ場で見せる */
@@ -4317,10 +4456,7 @@ function run(){
   // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
   E.fillBreakEven(r, hs, rows, tn);
   const {bets, value, dropped, grade, upset, spend, policy, hitChance} =
-    E.buildBets(rows, r.budget, {
-      policy: r.policy,
-      extras: {sanrenpuku: r.sanrenpuku, sanrentan: r.sanrentan}
-    });
+    E.buildBets(rows, r.budget, {policy: r.policy, kinds: r.kinds});
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -4463,8 +4599,8 @@ function run(){
             ? `<span class="k">推定期待値</span><span class="v ${x.evEst >= 1 ? "ev-ok" : "ev-ng"}">${x.evEst.toFixed(2)}</span>`
             : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
-      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割っています。当たる回数を支えるために買う1点で、
-        この点だけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
+      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割る点を含みます。当たる回数を支えるために買う点で、
+        そこだけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
         <tr><th>買い目</th><th>金額</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
@@ -4491,9 +4627,10 @@ function run(){
   }
   const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
   if(cutN) notes.push(`割の合わない ${cutN}点 は、はじめから外してあります。`);
-  if(bets.length && !r.sanrenpuku && !r.sanrentan){
-    notes.push("三連複・三連単は出していません。控除率が高いうえ推定の誤差も大きく、" +
-               "検証では的中率でも回収率でも複勝・ワイドに負けたためです。買う場合は上のチェックを入れてください。");
+  const offKinds = Object.keys(E.KIND_LABEL)
+    .filter(k => !r.kinds[k]).map(k => E.KIND_LABEL[k]);
+  if(bets.length && offKinds.length){
+    notes.push(`選んでいない券種（${offKinds.join("・")}）は出していません。`);
   }
   $("droppedNote").textContent = notes.join(" ");
 
@@ -4677,6 +4814,7 @@ function loadSample(){
 
 /* ---------- イベント ---------- */
 $("policy").addEventListener("change", syncPolicyNote);
+Object.keys(KIND_BOX).forEach(k => $(KIND_BOX[k]).addEventListener("change", syncKindNote));
 $("bankroll").addEventListener("input", syncBankroll);
 $("stakePct").addEventListener("change", syncBankroll);
 $("track").addEventListener("change", syncTrackUI);
@@ -4827,6 +4965,7 @@ $("importFile").addEventListener("change", e => {
 buildTrackSelect();
 syncTrackUI();
 syncPolicyNote();
+syncKindNote();
 syncBankroll();
 addHorses(6);
 

@@ -150,11 +150,16 @@
       </label>
     </div>
     <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
-    <p class="hint" style="margin:6px 0 0">
-      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
-      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
-      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
-    </p>
+    <div class="kind-pick">
+      <span class="kp-label">買う券種</span>
+      <label class="inline"><input type="checkbox" id="kindTan" checked> 単勝</label>
+      <label class="inline"><input type="checkbox" id="kindFuku" checked> 複勝</label>
+      <label class="inline"><input type="checkbox" id="kindUmaren" checked> 馬連</label>
+      <label class="inline"><input type="checkbox" id="kindWide" checked> ワイド</label>
+      <label class="inline"><input type="checkbox" id="kindSanrenpuku"> 三連複</label>
+      <label class="inline"><input type="checkbox" id="kindSanrentan"> 三連単</label>
+    </div>
+    <p class="hint" id="kindNote" style="margin:6px 0 0"></p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>

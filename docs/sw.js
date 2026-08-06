@@ -1,5 +1,5 @@
 /* このファイルは keiba/build.js が生成します。直接編集せず、keiba/engine.js と keiba/ui/* を編集してください。 */
-const CACHE = "turf-logic-d4da16735fdd";
+const CACHE = "turf-logic-a4e71786dc14";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
                 "./icon-192.png", "./icon-512.png", "./icon-maskable.png"];
 

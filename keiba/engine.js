@@ -446,6 +446,39 @@
     return Math.max(100, Math.floor(total / points / 100) * 100);
   }
 
+  /* ---------- 1点ごとの金額を配る ----------
+     share 円を重み w に比例して100円単位で配る。合計は share を超えない。
+
+     素朴に「share × 比率」を100円に丸めると、比率の小さい点まで
+     最低100円が要るぶん合計が share を上回る。以前はこの超過を
+     「券種ごと落とす」ことで吸収していたため、利用者が選んだ馬連が
+     黙って消えることがあった。券種を落とすのではなく点数を減らす。
+
+     手順は、まず全点に100円ずつ置き、残りを比率で配る（最大剰余法）。
+     全点に100円すら置けないときは、重みの大きい点から置ける数だけ残す。 */
+  function allocate(share, weights){
+    const slots = Math.floor(share / 100);
+    const n = weights.length;
+    if(!(slots > 0) || !n) return null;
+
+    let idx = weights.map((v, i) => i);
+    if(slots < n){
+      idx = idx.slice().sort((a, b) => weights[b] - weights[a]).slice(0, slots)
+               .sort((a, b) => a - b);
+    }
+    const m = idx.length;
+    const w = idx.map(i => Math.max(0, weights[i]));
+    const sum = w.reduce((a, b) => a + b, 0);
+    const extra = slots - m;                       // 100円ずつ置いた残り
+    const base = w.map(v => sum > 0 ? extra * v / sum : extra / m);
+    const add = base.map(v => Math.floor(v));
+    let used = add.reduce((a, b) => a + b, 0);
+    const rest = base.map((v, i) => ({i: i, r: v - add[i]}))
+                     .sort((a, b) => b.r - a.r);
+    for(let k = 0; used < extra; k++, used++) add[rest[k % m].i]++;
+    return {keep: idx, units: add.map(v => (v + 1) * 100)};
+  }
+
   /* ============================================================
      買い下限オッズ
      ------------------------------------------------------------
@@ -714,6 +747,23 @@
       }
     }
   };
+  /* ---------- 券種ごとの性質 ----------
+     「ワイドは馬連の3倍の回収率が見込める」と言われることがあるが、
+     3倍になるのは回収率ではなく的中率である。同じ上位3頭のBOXで
+     券種だけを変えて6000レース測ると、こうなった。
+
+       馬連 3点BOX  … レース的中 22.8%  回収率 75.3%
+       ワイド 3点BOX … レース的中 47.4%  回収率 76.2%
+       馬連 上位2頭1点 … 的中 10.5%  回収率 78.3%
+       ワイド 上位2頭1点 … 的中 25.3%  回収率 77.7%
+
+     的中率は2〜3倍になるが、回収率はほぼ同じところへ寄る。
+     控除率が馬連もワイドも 22.5% で同じだからで、
+     長く買えば平均的な買い手の取り分は 77.5% に近づく。
+     もし回収率が3倍（＝232%）なら主催者が赤字になるので、
+     仕組みの上でありえない。 */
+  const KIND_LABEL = {tan:"単勝", fuku:"複勝", umaren:"馬連", wide:"ワイド",
+                      sanrenpuku:"三連複", sanrentan:"三連単"};
   const POLICY_KEYS = ["value", "balance", "hit"];
   const POLICY_DEFAULT = "balance";
   function policyOf(key){ return POLICIES[key] || POLICIES[POLICY_DEFAULT]; }
@@ -786,10 +836,21 @@
          必要オッズ = 点数 ÷ 的中確率の合計
 
      で決まる。実際のオッズがこれを下回るなら、その買い目は見送るべきである。 */
+  /* 買う券種。方針が既定で使うものに、利用者が明示した分を足し引きする。
+     opt.kinds で明示されていればそれが優先。何も指定がなければ従来どおり
+     （方針の kinds ＋ opt.extras）になる。 */
+  const ALWAYS_ON = {tan: true, fuku: true};   // 単勝・複勝は明示して切らない限り出す
+  function kindOn(pol, opt, kind){
+    if(opt.kinds && opt.kinds[kind] != null) return !!opt.kinds[kind];
+    if(ALWAYS_ON[kind]) return true;
+    if(pol.kinds && pol.kinds[kind]) return true;
+    return !!(opt.extras && opt.extras[kind]);
+  }
+
   function buildBets(rows, budget, opt){
     opt = opt || {};
     const pol = policyOf(opt.policy);
-    const extras = opt.extras || {};       // {sanrenpuku:true, sanrentan:true}
+    const use = (kind) => kindOn(pol, opt, kind);
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
       return {bets: [], value: null, dropped: [], grade: grade, policy: pol,
@@ -812,6 +873,7 @@
     const push = (o) => {
       if(!o.combos.length) return;
       if(o.cut == null) o.cut = 0;      // 候補から外した点数（無ければ0）
+      o.all = o.combos.slice();         // 予算で削る前の全点（配分の元になる）
       bets.push(o);
     };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
@@ -837,7 +899,7 @@
        単勝だけは実際のオッズから期待値をそのまま計算できる（推定ではない）。
        だから期待値1.0未満は買わない。ただし選ぶ順は期待値ではなく
        資金の増え方にする。期待値順だと、勝ち目の薄い人気薄が上に来てしまう。 */
-    const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
+    const tan = (use("tan") ? rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV) : [])
                     .sort((x, y) => growth(y.prob, y.ev) - growth(x.prob, x.ev))
                     .slice(0, 2);
     tan.forEach((x, k) => {
@@ -858,7 +920,7 @@
        以前は「3着以内50%以上かつ期待値1.0以上」という条件で1頭だけ選んでいた。
        この条件はほとんどのレースで誰も通らず、いちばん当たる券種が
        3レースに1回しか出ていなかった。 */
-    const places = placePositions(n);
+    const places = use("fuku") ? placePositions(n) : 0;
     if(places){
       const cands = rows.map(x => {
         const i = idx[x.h.num];
@@ -884,7 +946,6 @@
            .slice(0, pol.fukuValue).forEach(o => takeN.push(o));
       takeN.forEach((o, k) => {
         push({name: `複勝（${places}着まで）` + (k ? `（${k+1}頭目）` : ""),
-              underEv: o.ev < BUY_EV,
               kind: "fuku", prio: 90 - k, ratio: (k ? 0.10 : 0.16) * pol.tanScale,
               combos: [String(o.x.h.num)], hit: o.hit, needOdds: need(o.hit, 1),
               evEst: o.ev,
@@ -963,7 +1024,8 @@
     // 荒れるレースは相手を広げる（ただし投入額は upset.stakeScale で絞る）
     const spread = up.level === "high" ? 2 : up.level === "mid" ? 1 : 0;
     const opts = (kind) => {
-      const o = pol.kinds[kind] || EXTRA_KINDS[kind];
+      if(!use(kind)) return null;
+      const o = (pol.kinds && pol.kinds[kind]) || EXTRA_KINDS[kind];
       if(!o) return null;
       return Object.assign({}, o, {
         max: o.max + spread,
@@ -999,7 +1061,7 @@
     }
 
     // --- 馬連（1・2着の組。順不同） ---
-    if(opts("umaren")){
+    if(n >= 3 && opts("umaren")){
       shape(selectPoints(pairAll("umaren", quinellaProb), opts("umaren")),
             "馬連", "umaren", 70, opts("umaren").ratio, "資金の増え方で選んだ組み合わせ");
     }
@@ -1008,7 +1070,7 @@
        控除率25%。推定の誤差も大きく、人工のレースでは上位4頭BOXでも
        的中15%・回収60%と、複勝・ワイドに両方の指標で負けた。
        既定では出さない。明示的に指定されたときだけ、荒れるレースに限って出す。 */
-    if(n >= 4 && extras.sanrenpuku && up.level !== "low"){
+    if(n >= 4 && opts("sanrenpuku")){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = x+1; y < cand.length; y++)
@@ -1024,7 +1086,7 @@
     /* --- 三連単（着順まで当てる） ---
        控除率27.5%と最も高く、推定は Harville の仮定にいちばん強く依存する。
        人工のレースでは上位3頭BOXで的中6%・回収44%。既定では出さない。 */
-    if(n >= 4 && extras.sanrentan){
+    if(n >= 4 && opts("sanrentan")){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = 0; y < cand.length; y++)
@@ -1039,7 +1101,14 @@
             g.kept.length ? `資金の増え方で選んだ並び（最良 ${g.kept[0].combo} で推定期待値 ${g.kept[0].ev.toFixed(2)}）` : "");
     }
 
-    /* 券種としての推定期待値。同額で買うので、1点ごとの期待値の平均になる。 */
+    /* 推定期待値が1.0を割る点を含む券種には印を付ける。
+       買い方によっては当たる回数を支えるためにそれを買うが、
+       買っていることは必ず画面に出す。 */
+    bets.forEach(b => {
+      b.underEv = (b.points || []).some(pt => pt.ev != null && pt.ev < BUY_EV);
+    });
+
+    /* 券種としての推定期待値。1点ごとの期待値の平均になる。 */
     bets.forEach(b => {
       if(b.evEst != null || b.evKnown != null) return;
       const es = (b.points || []).map(pt => pt.ev).filter(v => v != null);
@@ -1057,30 +1126,49 @@
     /* 1点ごとの金額。同額で並べるのではなく、資金がいちばん速く増える割合
        （Kelly の f）に比例させる。同じ予算でも、当たりやすく割の良い点に
        厚く乗るので、当たったときの取り返しが大きくなる。 */
+    /* 荒れるレースでは単勝の比重を必ず下げる。
+       比率だけ下げても、他の券種が条件を満たさず出てこなかった場合に
+       単勝だけが残って比重が上がってしまう。上限を置いて確実に下げる。 */
+    const capTan = up.level === "high" ? 0.25 : up.level === "mid" ? 0.35 : 1;
+    if(capTan < 1){
+      const tanSum   = bets.filter(x => x.kind === "tan").reduce((a, x) => a + x.ratio, 0);
+      const otherSum = bets.filter(x => x.kind !== "tan").reduce((a, x) => a + x.ratio, 0);
+      if(tanSum > 0 && otherSum > 0 && tanSum / (tanSum + otherSum) > capTan){
+        const scale = (capTan / (1 - capTan)) * otherSum / tanSum;
+        bets.forEach(x => { if(x.kind === "tan") x.ratio *= scale; });
+      }
+    }
+
     let live = bets.slice();
     const dropped = [];
     for(;;){
       const ratioSum = live.reduce((s, x) => s + x.ratio, 0);
       live.forEach(x => {
         const share = spend * (x.ratio / ratioSum);
-        const pts = x.points || [];
-        const fs = pts.length === x.combos.length
-          ? pts.map(p => (p && p.f > 0) ? p.f : 0) : [];
-        const fSum = fs.reduce((a, b) => a + b, 0);
-        if(fSum > 0){
-          x.units = fs.map(f => Math.max(100, Math.round(share * (f / fSum) / 100) * 100));
-        } else {
-          const u = unitAmount(share, x.combos.length);
-          x.units = x.combos.map(() => u);
-        }
+        const pts = (x.points && x.points.length === x.all.length) ? x.points : null;
+        const w = x.all.map((c, k) => {
+          const f = pts ? pts[k].f : 0;
+          return (f > 0) ? f : 1e-6;      // 増え方が出せない点も等分では残す
+        });
+        const a = allocate(share, w);
+        if(!a){ x.combos = []; x.units = []; x.total = 0; x.unit = 0; return; }
+        x.combos = a.keep.map(i => x.all[i]);
+        x.points = pts ? a.keep.map(i => pts[i]) : x.points;
+        x.units  = a.units;
         x.unit = Math.min.apply(null, x.units);          // 表示用の最小単位
-        x.total = x.units.reduce((a, b) => a + b, 0);
+        x.total = x.units.reduce((a2, b) => a2 + b, 0);
         (x.points || []).forEach((p, k) => { p.yen = x.units[k]; });
       });
-      const used = live.reduce((s, x) => s + x.total, 0);
-      if(used <= spend || live.length <= 1) break;
-      let worst = 0;
-      for(let i=1;i<live.length;i++) if(live[i].prio < live[worst].prio) worst = i;
+      /* 点数で吸収しても1点も置けなかった券種だけ落とす。
+         優先度の低いものから外して、残りに予算を回す。 */
+      const empty = live.filter(x => !x.combos.length);
+      if(!empty.length) break;
+      let worst = -1;
+      live.forEach((x, i) => {
+        if(x.combos.length) return;
+        if(worst < 0 || x.prio < live[worst].prio) worst = i;
+      });
+      if(worst < 0 || live.length <= 1) break;
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
@@ -1159,7 +1247,7 @@
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
     breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
     kellyFraction, growth, hitChance, longestMissRun, bankrollPlan,
-    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
+    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS, kindOn, KIND_LABEL,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
