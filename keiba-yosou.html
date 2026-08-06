@@ -407,6 +407,23 @@ label.inline input{margin:0;}
 .hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
 .odds-need .v.ev-ng{color:var(--red);}
 input.derived{background:var(--paper);color:var(--ink-soft);}
+.money-box{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:11px 13px;margin-bottom:12px;
+}
+.money-box .m-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:6px;}
+.money-box .m-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:4px 0;}
+.money-box .m-row.total{border-top:1px dashed var(--line);margin-top:4px;padding-top:8px;}
+.money-box .m-k{font-size:.78rem;font-weight:700;}
+.money-box .m-v{font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums;}
+.money-box .m-v.good{color:var(--turf);}
+.money-box .m-v.mid{color:var(--ink);}
+.money-box .m-v.bad{color:var(--red);}
+.money-box .m-sub{margin-left:auto;font-size:.72rem;color:var(--ink-soft);}
+.money-box .m-line,.money-box .m-note{font-size:.75rem;line-height:1.7;color:var(--ink-soft);margin-top:6px;}
+.money-box .m-note.good{color:var(--turf);font-weight:700;}
+.money-box .m-note.bad{color:var(--red);}
+.money-box .m-note b{color:var(--red);font-variant-numeric:tabular-nums;}
 .kind-pick{
   display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;
   margin-top:12px;padding:9px 12px;border:1px solid var(--line);
@@ -915,12 +932,20 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
         <select id="histTrack" style="width:auto"></select>
       </label>
     </div>
+    <div class="money-box" id="moneyBox" hidden></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline">目標にする回収率
+        <input type="number" id="targetRoi" value="130" min="100" max="500" step="5" style="width:5em">
+        <span>%</span>
+      </label>
+    </p>
     <div class="stat-row" id="histStats"></div>
     <div class="upset-stats" id="upsetStats"></div>
     <div id="histList"></div>
     <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
     <p class="hint" style="margin:12px 0 0">
       着順を入れると的中率が集計され、騎手評価の提案にも使われます。
+      <b>投入と払戻を入れると、回収率が出ます。</b>的中率だけでは回収率は分かりません。
       記録はこの端末にのみ保存されます（外部には送信しません）。
     </p>
   </section>
@@ -3224,6 +3249,8 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
       infoLevel: (typeof r.infoLevel === "number") ? r.infoLevel : null,
       pred: Array.isArray(r.pred) ? r.pred : [],
       bets: Array.isArray(r.bets) ? r.bets : [],
+      // 実際に使った額と戻ってきた額。入れるまでは null（回収率の集計から外れる）
+      money: normalizeMoney(r.money),
       result: r.result && r.result.first ? r.result : null
     };
     return out;
@@ -3234,8 +3261,91 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
     return records.map(normalizeRecord).filter(Boolean);
   }
 
+  function normalizeMoney(m){
+    if(!m || typeof m !== "object") return null;
+    const num = v => (typeof v === "number" && isFinite(v) && v >= 0) ? Math.round(v) : null;
+    const spent = num(m.spent), payout = num(m.payout);
+    if(spent == null && payout == null) return null;
+    return {spent: spent, payout: payout};
+  }
+
   function hasResult(r){
     return !!(r && r.result && r.result.first);
+  }
+
+  /* 収支が数えられる記録か。投入額が入っていること（払戻0は「外れ」として有効）。 */
+  function hasMoney(r){
+    return !!(r && r.money && r.money.spent > 0 && r.money.payout != null);
+  }
+
+  /* その記録で提案した買い目の合計。投入額の既定値に使う。 */
+  function suggestedSpend(r){
+    return (r && r.bets || []).reduce((a, b) => a + (Number(b.total) || 0), 0);
+  }
+
+  /* ============================================================
+     収支
+     ------------------------------------------------------------
+     的中率だけでは回収率は分からない。実際に使った額と戻ってきた額を
+     入れてもらい、そこから数える。
+     ============================================================ */
+  function moneyStats(records){
+    const done = (records || []).filter(hasMoney);
+    let spent = 0, payout = 0, hit = 0;
+    done.forEach(r => {
+      spent += r.money.spent; payout += r.money.payout;
+      if(r.money.payout > 0) hit++;
+    });
+    return {
+      races: done.length, spent: spent, payout: payout,
+      profit: payout - spent,
+      roi: spent > 0 ? payout / spent : null,
+      hit: done.length ? hit / done.length : null
+    };
+  }
+
+  /* 日付ごとにまとめる。競馬は日単位で区切って考えることが多い。 */
+  function dayKey(ms){
+    const d = new Date(ms || 0);
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
+
+  function byDay(records){
+    const map = {};
+    (records || []).forEach(r => {
+      const k = dayKey(r.savedAt);
+      (map[k] = map[k] || []).push(r);
+    });
+    return Object.keys(map).sort().reverse().map(k => ({
+      day: k, records: map[k], money: moneyStats(map[k]),
+      stats: raceStats(map[k])
+    }));
+  }
+
+  /* ---------- 目標回収率に対する、その日の立ち位置 ----------
+     いちばん出したい数字は「あと何倍あれば届くか」である。
+     負けているときに残りのレースで取り返そうとすると、必要な回収率は
+     跳ね上がる。その数字を見せずに「あと少し」と言うのは嘘になる。 */
+  function dayPlan(money, target, planSpend){
+    target = target || 1.30;
+    const spent = money.spent || 0, payout = money.payout || 0;
+    if(!(spent > 0)){
+      return {target: target, reached: false, spent: 0, payout: 0, roi: null,
+              shortfall: 0, needRoi: null};
+    }
+    const roi = payout / spent;
+    const shortfall = target * spent - payout;      // いま止めると足りない額
+    // これから planSpend 円を追加で使うとき、その分に必要な回収率
+    const needRoi = (planSpend > 0)
+      ? (target * (spent + planSpend) - payout) / planSpend
+      : null;
+    return {
+      target: target, reached: roi >= target,
+      spent: spent, payout: payout, roi: roi,
+      shortfall: Math.max(0, Math.round(shortfall)),
+      needRoi: needRoi
+    };
   }
   function placings(r){
     return [r.result.first, r.result.second, r.result.third].filter(n => n > 0);
@@ -3401,8 +3511,10 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
         parts: roundParts(x.parts)
       })),
       bets: (bets || []).map(b => ({
-        name: b.name, combos: b.combos, unit: b.unit, total: b.total
+        name: b.name, kind: b.kind || null, combos: b.combos,
+        unit: b.unit, units: b.units || null, total: b.total
       })),
+      money: null,
       result: null
     };
   }
@@ -3416,7 +3528,8 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
   return {
     MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
     raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord, roundParts
+    makeRecord, addRecord, hasResult, hasMoney, wasUpset, normalize, normalizeRecord,
+    roundParts, normalizeMoney, suggestedSpend, moneyStats, byDay, dayKey, dayPlan
   };
 });
 
@@ -5057,6 +5170,79 @@ function renderGradeGuide(){
 }
 
 /* ---------- 記録一覧 ---------- */
+const TARGET_KEY = "turf-logic-target-v1";
+function targetRoi(){
+  const v = numOr($("targetRoi").value, 130);
+  return Math.min(500, Math.max(100, v)) / 100;
+}
+function saveTarget(){
+  try{ localStorage.setItem(TARGET_KEY, String($("targetRoi").value)); }catch(e){}
+  renderMoney();
+}
+
+/* ---------- 収支 ----------
+   的中率だけでは回収率は分からない。入れてもらった投入と払戻から数える。
+   目標に届いていないとき、残りで取り返すのに必要な回収率も出す。
+   ここを出さずに「あと少し」と言うのは嘘になる。 */
+function renderMoney(){
+  const box = $("moneyBox");
+  if(!box) return;
+  const all = H.moneyStats(history);
+  if(!all.races){
+    box.hidden = false;
+    box.className = "money-box empty-money";
+    box.innerHTML = `<div class="m-head">収支</div>` +
+      `<div class="m-line">下の各レースに<b>投入</b>と<b>払戻</b>を入れると、回収率が出ます。` +
+      `的中率がいくら高くても、回収率はそれだけでは分かりません。</div>`;
+    return;
+  }
+  const target = targetRoi();
+  const days = H.byDay(history).filter(d => d.money.races > 0);
+  const today = days[0];
+  const plan = today ? H.dayPlan(today.money, target, Math.round(today.money.spent / Math.max(1, today.money.races))) : null;
+
+  const pc = v => v == null ? "—" : (v * 100).toFixed(1) + "%";
+  const cls = v => v == null ? "" : (v >= target ? "good" : v >= 1 ? "mid" : "bad");
+
+  let html = `<div class="m-head">収支</div>`;
+  if(today){
+    html += `<div class="m-row">
+      <span class="m-k">${escapeHtml(today.day)}（${today.money.races}レース）</span>
+      <span class="m-v mono ${cls(today.money.roi)}">${pc(today.money.roi)}</span>
+      <span class="m-sub mono">${yen(today.money.spent)} → ${yen(today.money.payout)}
+        （${today.money.profit >= 0 ? "+" : ""}${yen(today.money.profit)}）</span>
+    </div>`;
+    if(plan.reached){
+      html += `<div class="m-note good">目標の ${Math.round(target*100)}% に届いています。
+        ここでやめれば、この日は目標達成で終わります。</div>`;
+    } else if(plan.needRoi != null && plan.needRoi > 1){
+      html += `<div class="m-note ${plan.needRoi > 3 ? "bad" : ""}">
+        目標まで ${yen(plan.shortfall)} 足りません。次の1レースで取り返すなら、
+        そのレースだけで <b>${pc(plan.needRoi)}</b> の回収が必要です。
+        ${plan.needRoi > 3 ? "この数字は現実的ではありません。賭け金を増やして取り返そうとすると、負けた日の損失だけが大きくなります。" : ""}
+      </div>`;
+    }
+  }
+  html += `<div class="m-row total">
+    <span class="m-k">通算（${all.races}レース）</span>
+    <span class="m-v mono ${cls(all.roi)}">${pc(all.roi)}</span>
+    <span class="m-sub mono">${yen(all.spent)} → ${yen(all.payout)}
+      （${all.profit >= 0 ? "+" : ""}${yen(all.profit)}）</span>
+  </div>`;
+
+  // 目標に届いた日が、何日に1日あったか
+  const reached = days.filter(d => d.money.roi >= target).length;
+  if(days.length >= 3){
+    html += `<div class="m-note">目標に届いた日: ${reached}/${days.length}日
+      （${(100*reached/days.length).toFixed(0)}%）。
+      人工のレースで測ると、何もしなくても 5日に1日ほどは 130% を超えます。
+      日ごとの回収率は大きく散らばるので、良し悪しは通算で見てください。</div>`;
+  }
+  box.hidden = false;
+  box.className = "money-box";
+  box.innerHTML = html;
+}
+
 function renderHistory(){
   const sel = $("histTrack");
   const cur = sel.value || "all";
@@ -5134,6 +5320,13 @@ function renderHistory(){
           <input type="number" min="0" max="18" placeholder="1着" data-res="first"  value="${done ? r.result.first  : ""}">
           <input type="number" min="0" max="18" placeholder="2着" data-res="second" value="${done && r.result.second ? r.result.second : ""}">
           <input type="number" min="0" max="18" placeholder="3着" data-res="third"  value="${done && r.result.third  ? r.result.third  : ""}">
+        </div>
+        <div class="res-form">
+          <span class="hint">投入・払戻（円）</span>
+          <input type="number" min="0" step="100" placeholder="投入" data-res="spent"
+                 value="${r.money && r.money.spent != null ? r.money.spent : (H.suggestedSpend(r) || "")}">
+          <input type="number" min="0" step="10" placeholder="払戻" data-res="payout"
+                 value="${r.money && r.money.payout != null ? r.money.payout : ""}">
           <button type="button" class="primary" data-act="save">結果を記録</button>
           <button type="button" class="danger" data-act="delete">削除</button>
         </div>
@@ -5144,6 +5337,7 @@ function renderHistory(){
 }
 
 $("histTrack").addEventListener("change", renderHistory);
+$("targetRoi").addEventListener("input", saveTarget);
 
 $("histList").addEventListener("click", e => {
   const act = e.target.dataset.act;
@@ -5168,9 +5362,14 @@ $("histList").addEventListener("click", e => {
     return;
   }
   r.result = {first: first, second: val("second"), third: val("third")};
+  const spent = val("spent"), payout = val("payout");
+  const payBox = box.querySelector('[data-res="payout"]');
+  r.money = (spent > 0 && payBox && payBox.value !== "")
+    ? {spent: spent, payout: payout} : null;
   saveHistory(history);
   renderHistory();
   renderJockeys();
+  renderMoney();
   showReview(r);
   autoRelearn();
 });
@@ -5311,7 +5510,12 @@ $("btnSaveRace").addEventListener("click", () => {
 });
 
 renderGradeGuide();
+try{
+  const t = localStorage.getItem(TARGET_KEY);
+  if(t) $("targetRoi").value = t;
+}catch(e){}
 renderHistory();
+renderMoney();
 tune = loadTune();
 renderLearn();
 

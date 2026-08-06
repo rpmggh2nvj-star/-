@@ -287,4 +287,88 @@ t("記録にレース評価と荒れ度を残せる", () => {
   assert.strictEqual(r2.upset, null);
 });
 
+console.log("\n■ 収支");
+
+const money = (id, savedAt, spent, payout) => ({
+  id: id, savedAt: savedAt, race: {track:"ooi"},
+  pred: [{rank:1, num:1, odds:2.0, prob:0.5}], bets: [],
+  money: (spent == null) ? null : {spent: spent, payout: payout},
+  result: {first: 1}
+});
+
+t("投入と払戻を入れた記録だけを数える", () => {
+  const list = H.normalize([
+    money("a", 1, 1000, 1500),
+    money("b", 2, 1000, 0),
+    money("c", 3, null, null)          // 未入力
+  ]);
+  const m = H.moneyStats(list);
+  assert.strictEqual(m.races, 2, "件数: " + m.races);
+  assert.strictEqual(m.spent, 2000);
+  assert.strictEqual(m.payout, 1500);
+  assert.strictEqual(m.profit, -500);
+  assert.ok(Math.abs(m.roi - 0.75) < 1e-9, "回収率: " + m.roi);
+  assert.ok(Math.abs(m.hit - 0.5) < 1e-9, "的中率: " + m.hit);
+});
+
+t("払戻0（外れ）も数える。未入力とは区別する", () => {
+  assert.strictEqual(H.hasMoney(H.normalizeRecord(money("a", 1, 1000, 0))), true);
+  assert.strictEqual(H.hasMoney(H.normalizeRecord(money("b", 1, null, null))), false);
+  // 投入が0のものは数えない（買っていない）
+  assert.strictEqual(H.hasMoney(H.normalizeRecord(money("c", 1, 0, 0))), false);
+});
+
+t("壊れた収支は落とす（負の値・数値でないもの）", () => {
+  const bad = H.normalizeRecord({id:"x", savedAt:1, money:{spent:-100, payout:"あ"}, result:{first:1}});
+  assert.strictEqual(bad.money, null);
+  const half = H.normalizeRecord({id:"y", savedAt:1, money:{spent:1000}, result:{first:1}});
+  assert.deepStrictEqual(half.money, {spent:1000, payout:null});
+  assert.strictEqual(H.hasMoney(half), false, "払戻が無いのに数えている");
+});
+
+t("日ごとにまとめられ、新しい日が先に来る", () => {
+  const d1 = new Date(2026, 7, 5, 12, 0).getTime();
+  const d2 = new Date(2026, 7, 6, 12, 0).getTime();
+  const days = H.byDay(H.normalize([
+    money("a", d1, 1000, 0), money("b", d1, 1000, 3000), money("c", d2, 1000, 500)
+  ]));
+  assert.strictEqual(days.length, 2);
+  assert.strictEqual(days[0].day, H.dayKey(d2), "新しい日が先に来ていない");
+  assert.strictEqual(days[1].money.races, 2);
+  assert.ok(Math.abs(days[1].money.roi - 1.5) < 1e-9, "その日の回収率: " + days[1].money.roi);
+});
+
+t("目標に届いているかを判定する", () => {
+  const hit  = H.dayPlan({spent:10000, payout:14000}, 1.30, 1000);
+  assert.strictEqual(hit.reached, true);
+  assert.strictEqual(hit.shortfall, 0);
+  const miss = H.dayPlan({spent:10000, payout:9000}, 1.30, 1000);
+  assert.strictEqual(miss.reached, false);
+  assert.strictEqual(miss.shortfall, 4000, "不足額: " + miss.shortfall);
+});
+
+t("取り返すのに必要な回収率は、賭ける額が小さいほど跳ね上がる", () => {
+  const m = {spent:8000, payout:4000};
+  const a = H.dayPlan(m, 1.30, 1000).needRoi;
+  const b = H.dayPlan(m, 1.30, 2000).needRoi;
+  const c = H.dayPlan(m, 1.30, 8000).needRoi;
+  assert.ok(a > b && b > c, `${a} > ${b} > ${c} になっていない`);
+  // 投入8000・払戻4000 のとき、あと2000円で届かせるには 450% 必要
+  assert.ok(Math.abs(b - 4.5) < 1e-9, "必要な回収率: " + b);
+});
+
+t("まだ買っていない日は、目標の判定を出さない", () => {
+  const p = H.dayPlan({spent:0, payout:0}, 1.30, 1000);
+  assert.strictEqual(p.reached, false);
+  assert.strictEqual(p.roi, null);
+  assert.strictEqual(p.needRoi, null);
+});
+
+t("提案した買い目の合計を、投入額の既定値にできる", () => {
+  const r = {bets:[{total:1200},{total:800},{total:0}]};
+  assert.strictEqual(H.suggestedSpend(r), 2000);
+  assert.strictEqual(H.suggestedSpend({}), 0);
+  assert.strictEqual(H.suggestedSpend(null), 0);
+});
+
 console.log(`\n${pass} 件成功` + (process.exitCode ? "（失敗あり）" : "") + "\n");

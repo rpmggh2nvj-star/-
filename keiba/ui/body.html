@@ -292,12 +292,20 @@
         <select id="histTrack" style="width:auto"></select>
       </label>
     </div>
+    <div class="money-box" id="moneyBox" hidden></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline">目標にする回収率
+        <input type="number" id="targetRoi" value="130" min="100" max="500" step="5" style="width:5em">
+        <span>%</span>
+      </label>
+    </p>
     <div class="stat-row" id="histStats"></div>
     <div class="upset-stats" id="upsetStats"></div>
     <div id="histList"></div>
     <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
     <p class="hint" style="margin:12px 0 0">
       着順を入れると的中率が集計され、騎手評価の提案にも使われます。
+      <b>投入と払戻を入れると、回収率が出ます。</b>的中率だけでは回収率は分かりません。
       記録はこの端末にのみ保存されます（外部には送信しません）。
     </p>
   </section>

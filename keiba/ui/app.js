@@ -1040,6 +1040,79 @@ function renderGradeGuide(){
 }
 
 /* ---------- 記録一覧 ---------- */
+const TARGET_KEY = "turf-logic-target-v1";
+function targetRoi(){
+  const v = numOr($("targetRoi").value, 130);
+  return Math.min(500, Math.max(100, v)) / 100;
+}
+function saveTarget(){
+  try{ localStorage.setItem(TARGET_KEY, String($("targetRoi").value)); }catch(e){}
+  renderMoney();
+}
+
+/* ---------- 収支 ----------
+   的中率だけでは回収率は分からない。入れてもらった投入と払戻から数える。
+   目標に届いていないとき、残りで取り返すのに必要な回収率も出す。
+   ここを出さずに「あと少し」と言うのは嘘になる。 */
+function renderMoney(){
+  const box = $("moneyBox");
+  if(!box) return;
+  const all = H.moneyStats(history);
+  if(!all.races){
+    box.hidden = false;
+    box.className = "money-box empty-money";
+    box.innerHTML = `<div class="m-head">収支</div>` +
+      `<div class="m-line">下の各レースに<b>投入</b>と<b>払戻</b>を入れると、回収率が出ます。` +
+      `的中率がいくら高くても、回収率はそれだけでは分かりません。</div>`;
+    return;
+  }
+  const target = targetRoi();
+  const days = H.byDay(history).filter(d => d.money.races > 0);
+  const today = days[0];
+  const plan = today ? H.dayPlan(today.money, target, Math.round(today.money.spent / Math.max(1, today.money.races))) : null;
+
+  const pc = v => v == null ? "—" : (v * 100).toFixed(1) + "%";
+  const cls = v => v == null ? "" : (v >= target ? "good" : v >= 1 ? "mid" : "bad");
+
+  let html = `<div class="m-head">収支</div>`;
+  if(today){
+    html += `<div class="m-row">
+      <span class="m-k">${escapeHtml(today.day)}（${today.money.races}レース）</span>
+      <span class="m-v mono ${cls(today.money.roi)}">${pc(today.money.roi)}</span>
+      <span class="m-sub mono">${yen(today.money.spent)} → ${yen(today.money.payout)}
+        （${today.money.profit >= 0 ? "+" : ""}${yen(today.money.profit)}）</span>
+    </div>`;
+    if(plan.reached){
+      html += `<div class="m-note good">目標の ${Math.round(target*100)}% に届いています。
+        ここでやめれば、この日は目標達成で終わります。</div>`;
+    } else if(plan.needRoi != null && plan.needRoi > 1){
+      html += `<div class="m-note ${plan.needRoi > 3 ? "bad" : ""}">
+        目標まで ${yen(plan.shortfall)} 足りません。次の1レースで取り返すなら、
+        そのレースだけで <b>${pc(plan.needRoi)}</b> の回収が必要です。
+        ${plan.needRoi > 3 ? "この数字は現実的ではありません。賭け金を増やして取り返そうとすると、負けた日の損失だけが大きくなります。" : ""}
+      </div>`;
+    }
+  }
+  html += `<div class="m-row total">
+    <span class="m-k">通算（${all.races}レース）</span>
+    <span class="m-v mono ${cls(all.roi)}">${pc(all.roi)}</span>
+    <span class="m-sub mono">${yen(all.spent)} → ${yen(all.payout)}
+      （${all.profit >= 0 ? "+" : ""}${yen(all.profit)}）</span>
+  </div>`;
+
+  // 目標に届いた日が、何日に1日あったか
+  const reached = days.filter(d => d.money.roi >= target).length;
+  if(days.length >= 3){
+    html += `<div class="m-note">目標に届いた日: ${reached}/${days.length}日
+      （${(100*reached/days.length).toFixed(0)}%）。
+      人工のレースで測ると、何もしなくても 5日に1日ほどは 130% を超えます。
+      日ごとの回収率は大きく散らばるので、良し悪しは通算で見てください。</div>`;
+  }
+  box.hidden = false;
+  box.className = "money-box";
+  box.innerHTML = html;
+}
+
 function renderHistory(){
   const sel = $("histTrack");
   const cur = sel.value || "all";
@@ -1117,6 +1190,13 @@ function renderHistory(){
           <input type="number" min="0" max="18" placeholder="1着" data-res="first"  value="${done ? r.result.first  : ""}">
           <input type="number" min="0" max="18" placeholder="2着" data-res="second" value="${done && r.result.second ? r.result.second : ""}">
           <input type="number" min="0" max="18" placeholder="3着" data-res="third"  value="${done && r.result.third  ? r.result.third  : ""}">
+        </div>
+        <div class="res-form">
+          <span class="hint">投入・払戻（円）</span>
+          <input type="number" min="0" step="100" placeholder="投入" data-res="spent"
+                 value="${r.money && r.money.spent != null ? r.money.spent : (H.suggestedSpend(r) || "")}">
+          <input type="number" min="0" step="10" placeholder="払戻" data-res="payout"
+                 value="${r.money && r.money.payout != null ? r.money.payout : ""}">
           <button type="button" class="primary" data-act="save">結果を記録</button>
           <button type="button" class="danger" data-act="delete">削除</button>
         </div>
@@ -1127,6 +1207,7 @@ function renderHistory(){
 }
 
 $("histTrack").addEventListener("change", renderHistory);
+$("targetRoi").addEventListener("input", saveTarget);
 
 $("histList").addEventListener("click", e => {
   const act = e.target.dataset.act;
@@ -1151,9 +1232,14 @@ $("histList").addEventListener("click", e => {
     return;
   }
   r.result = {first: first, second: val("second"), third: val("third")};
+  const spent = val("spent"), payout = val("payout");
+  const payBox = box.querySelector('[data-res="payout"]');
+  r.money = (spent > 0 && payBox && payBox.value !== "")
+    ? {spent: spent, payout: payout} : null;
   saveHistory(history);
   renderHistory();
   renderJockeys();
+  renderMoney();
   showReview(r);
   autoRelearn();
 });
@@ -1294,7 +1380,12 @@ $("btnSaveRace").addEventListener("click", () => {
 });
 
 renderGradeGuide();
+try{
+  const t = localStorage.getItem(TARGET_KEY);
+  if(t) $("targetRoi").value = t;
+}catch(e){}
 renderHistory();
+renderMoney();
 tune = loadTune();
 renderLearn();
 
