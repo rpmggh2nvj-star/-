@@ -43,6 +43,8 @@
       grade: r.grade || null,                            // v1 の記録には無い
       upset: r.upset || null,                            // v1 の記録には無い
       race: r.race || {},
+      // v1〜v3 の記録には無い。学習の対象外になるだけで、記録としては有効。
+      infoLevel: (typeof r.infoLevel === "number") ? r.infoLevel : null,
       pred: Array.isArray(r.pred) ? r.pred : [],
       bets: Array.isArray(r.bets) ? r.bets : [],
       result: r.result && r.result.first ? r.result : null
@@ -175,6 +177,17 @@
     return 1;
   }
 
+  /* 項目ごとの点数。小数2桁で十分で、端末の保存領域も食わない。 */
+  function roundParts(parts){
+    if(!parts) return null;
+    const out = {};
+    Object.keys(parts).forEach(k => {
+      const v = Number(parts[k]);
+      if(isFinite(v)) out[k] = Math.round(v * 100) / 100;
+    });
+    return out;
+  }
+
   /* ---------- 保存用のレコードを組み立てる ---------- */
   function makeRecord(race, rows, bets, now, grade, upset){
     return {
@@ -190,6 +203,9 @@
         pace: race.pace, budget: race.budget,
         name: race.name || "", raceNo: race.raceNo || null
       },
+      /* 情報量は学習で必要になる（ブレンドの重みを決めている値）。
+         記録した時点の値をそのまま残す。 */
+      infoLevel: rows.infoLevel != null ? Math.round(rows.infoLevel * 1000) / 1000 : null,
       pred: rows.map((x, i) => ({
         rank: i + 1,
         num: x.h.num,
@@ -200,7 +216,12 @@
         score: Math.round(x.score * 10) / 10,
         prob: Math.round(x.prob * 10000) / 10000,
         ev: Math.round(x.ev * 100) / 100,
-        edge: Math.round(x.edge * 100) / 100
+        edge: Math.round(x.edge * 100) / 100,
+        /* 学習に使う「その日の入力」。着順が入ったあと、この項目の重みを
+           当てはめ直すために必要になる。予想そのものは書き換えないので、
+           あとから重みを変えても過去の記録は当時のまま残る。 */
+        market: Math.round(x.market * 100000) / 100000,
+        parts: roundParts(x.parts)
       })),
       bets: (bets || []).map(b => ({
         name: b.name, combos: b.combos, unit: b.unit, total: b.total
@@ -218,6 +239,6 @@
   return {
     MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
     raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord
+    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord, roundParts
   };
 });

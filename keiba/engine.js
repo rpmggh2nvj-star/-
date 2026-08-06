@@ -136,9 +136,76 @@
   }
 
   /* ============================================================
+     学習した重み
+     ------------------------------------------------------------
+     記録した着順から、どの項目をどれだけ重く見るべきかを学ぶ。
+     learn.js が求めた倍率をここで受け取る。既定はすべて 1.0 で、
+     何も学習していない状態＝これまでと同じ計算になる。
+
+     重みの当てはめ（learn.js）は、この関数と同じ計算を使わなければ
+     意味がない。そのため softmax とブレンドを scoreOf / blendProbs に
+     切り出し、予想と学習の両方が同じ道を通るようにしてある。
+     ============================================================ */
+  const PART_KEYS = ["form","jockey","training","dist","baba","pace","kinryo","weight","waku"];
+  const PART_LABEL = {
+    form:"近走", jockey:"騎手", training:"調教", dist:"距離適性", baba:"馬場適性",
+    pace:"展開（脚質）", kinryo:"斤量", weight:"馬体重増減", waku:"枠順"
+  };
+  const BLEND_BASE = 0.45;        // W = 1 − BLEND_BASE × 情報量
+
+  function multOf(tune, k){
+    const m = tune && tune.weights;
+    const v = m ? m[k] : null;
+    return (typeof v === "number" && isFinite(v) && v > 0) ? v : 1;
+  }
+  function scoreOf(parts, tune){
+    let s = 0;
+    for(let i = 0; i < PART_KEYS.length; i++){
+      const k = PART_KEYS[i];
+      if(parts[k] != null) s += parts[k] * multOf(tune, k);
+    }
+    return s;
+  }
+
+  const stdOf = arr => {
+    const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
+    return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
+  };
+
+  /* 指数 → モデル勝率（softmax）→ 市場とのブレンド。
+     予想（analyze）と学習（learn.js の当てはめ）が同じ結果になるよう、
+     ここだけを通す。 */
+  function blendProbs(scores, markets, info, tune){
+    /* 温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
+       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
+       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
+       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
+       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
+    const marketSpread = Math.max(0.6, stdOf(markets.map(v => Math.log(Math.max(1e-9, v)))));
+    const T = Math.min(14, Math.max(4, stdOf(scores) / marketSpread));
+    const maxScore = Math.max.apply(null, scores);
+    const exps = scores.map(v => Math.exp((v - maxScore) / T));
+    const expSum = exps.reduce((a,b)=>a+b, 0);
+    const model = exps.map(v => v / expSum);
+
+    /* モデル勝率 × 市場勝率 の幾何ブレンド。
+       オッズは極めて強い予測子なので、単独モデルを市場で補正して過信を防ぐ。
+       市場の重みは入力の情報量で決まる。判断材料がなければ市場そのもの（W=1）に
+       収束し、根拠のない「妙味」を出さない。
+       BLEND_BASE は「材料が揃ったとき、どこまで自分の見立てに寄せるか」で、
+       記録が貯まれば learn.js がこの値も学習し直す。 */
+    const base = (tune && typeof tune.blend === "number" && isFinite(tune.blend))
+      ? Math.min(0.9, Math.max(0, tune.blend)) : BLEND_BASE;
+    const W = 1 - base * info;
+    const bl = model.map((m, i) => Math.pow(markets[i], W) * Math.pow(m, 1 - W));
+    const blSum = bl.reduce((a,b)=>a+b, 0);
+    return {model: model, prob: bl.map(v => v / blSum), T: T, W: W};
+  }
+
+  /* ============================================================
      本体：能力指数 → 推定勝率
      ============================================================ */
-  function analyze(r, hs){
+  function analyze(r, hs, tune){
     /* 出走取消・除外の馬は走らない。オッズも付かないため、
        残したままだと市場推定勝率の分母が狂い、枠順の有利不利もずれる。 */
     hs = hs.filter(h => !h.scratched);
@@ -183,48 +250,24 @@
       // 7) 枠順
       parts.waku = wakuBonus(r, h, n);
 
-      const score = Object.keys(parts).reduce((a,k)=>a+parts[k], 0);
-      return {h, parts, score, market: impl[i] / implSum};
+      return {h, parts, score: scoreOf(parts, tune), market: impl[i] / implSum};
     });
 
-    /* 能力指数 → モデル勝率（softmax）
-
-       温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
-       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
-       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
-       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
-       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
-    const std = arr => {
-      const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
-      return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
-    };
-    const marketSpread = Math.max(0.6, std(rows.map(x => Math.log(x.market))));
-    const scoreSpread = std(rows.map(x => x.score));
-    const T = Math.min(14, Math.max(4, scoreSpread / marketSpread));
-    const maxScore = Math.max.apply(null, rows.map(x => x.score));
-    const exps = rows.map(x => Math.exp((x.score - maxScore) / T));
-    const expSum = exps.reduce((a,b)=>a+b, 0);
-    rows.forEach((x, i) => { x.model = exps[i] / expSum; });
-
-    // モデル勝率 × 市場勝率 の幾何ブレンド
-    // オッズは極めて強い予測子なので、単独モデルを市場で補正して過信を防ぐ。
-    // 市場の重みは入力の情報量で決まる。判断材料がなければ市場そのもの（W=1）に
-    // 収束し、根拠のない「妙味」を出さない。
     const info = infoLevelOf(hs);
-    const W = 1 - 0.45 * info;                       // 情報量1.0 → 0.55 / 0 → 1.00
-    const bl = rows.map(x => Math.pow(x.market, W) * Math.pow(x.model, 1 - W));
-    const blSum = bl.reduce((a,b)=>a+b, 0);
+    const b = blendProbs(rows.map(x => x.score), rows.map(x => x.market), info, tune);
     rows.forEach((x, i) => {
-      x.prob = bl[i] / blSum;
-      x.ev   = x.prob * x.h.odds;      // 単勝の期待回収率
-      x.edge = x.prob / x.market;      // 市場評価との乖離（1.00＝市場並み）
+      x.model = b.model[i];
+      x.prob  = b.prob[i];
+      x.ev    = x.prob * x.h.odds;      // 単勝の期待回収率
+      x.edge  = x.prob / x.market;      // 市場評価との乖離（1.00＝市場並み）
     });
 
     rows.sort((a,b) => b.prob - a.prob);
     rows.forEach((x, i) => { x.rank = i + 1; });
     rows.infoLevel = info;
-    rows.temperature = T;
-    rows.marketWeight = W;
+    rows.temperature = b.T;
+    rows.marketWeight = b.W;
+    rows.tune = tune || null;
     rows.race = r;
     rows.upset = upsetRisk(r, rows);
     return rows;
@@ -419,13 +462,13 @@
      二分法で探す。近似式を置かず本体の計算をそのまま使うため、
      表示している推定勝率と必ず整合する。
      ============================================================ */
-  function breakEvenOdds(r, hs, num){
+  function breakEvenOdds(r, hs, num, tune){
     const live = hs.filter(h => !h.scratched);
     if(!live.some(h => h.num === num)) return null;
 
     const evAt = o => {
       const copy = live.map(h => h.num === num ? Object.assign({}, h, {odds: o}) : h);
-      const x = analyze(r, copy).find(y => y.h.num === num);
+      const x = analyze(r, copy, tune).find(y => y.h.num === num);
       return x ? x.ev : 0;
     };
 
@@ -445,8 +488,8 @@
   }
 
   // 全馬ぶんまとめて求め、rows に minOdds として持たせる
-  function fillBreakEven(r, hs, rows){
-    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num); });
+  function fillBreakEven(r, hs, rows, tune){
+    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num, tune); });
     return rows;
   }
 
@@ -1068,6 +1111,7 @@
     TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS, NANKAN_KEYS, CHIHO_KEYS,
     STYLES, STYLE_LABEL, PACE_BONUS, MARKS, MARK_NAME,
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
+    PART_KEYS, PART_LABEL, BLEND_BASE, scoreOf, blendProbs,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
     breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,

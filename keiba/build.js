@@ -29,6 +29,7 @@ const parser = read("parse.js");
 const pdftext = read("pdftext.js");
 const historyjs = read("history.js");
 const backupjs = read("backup.js");
+const learnjs = read("learn.js");
 const style  = read("ui/style.html");
 const body   = read("ui/body.html");
 const app    = read("ui/app.js");
@@ -36,7 +37,7 @@ const app    = read("ui/app.js");
 const banner = "/* このファイルは keiba/build.js が生成します。直接編集せず、" +
                "keiba/engine.js と keiba/ui/* を編集してください。 */";
 
-const script = `<script>\n${banner}\n${engine}\n${parser}\n${pdftext}\n${historyjs}\n${backupjs}\n${app}\n</script>`;
+const script = `<script>\n${banner}\n${engine}\n${parser}\n${pdftext}\n${historyjs}\n${backupjs}\n${learnjs}\n${app}\n</script>`;
 
 // pdf.js は ESM のため type="module" で読み込む。
 // worker を先に読ませて globalThis.pdfjsWorker を立てると、pdf.js は

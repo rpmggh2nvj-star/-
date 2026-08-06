@@ -286,6 +286,32 @@
     </p>
   </section>
 
+  <!-- 記録から学ぶ -->
+  <section class="panel" id="learnPanel">
+    <div class="panel-head">
+      <h2>記録から学ぶ</h2>
+      <span class="hint" id="learnCount"></span>
+    </div>
+    <div class="learn-state s-off" id="learnState"></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline"><input type="checkbox" id="useTune" checked> 学習した見方を使う</label>
+    </p>
+    <p class="hint" id="learnNote" style="margin:8px 0 0"></p>
+    <ul class="learn-weights" id="learnWeights" hidden></ul>
+    <div class="learn-vs" id="learnVs" hidden></div>
+    <table class="cal-table" id="learnCal" hidden></table>
+    <div class="btn-row" style="margin-top:12px">
+      <button type="button" class="ghost" id="btnLearn">いま学習する</button>
+      <button type="button" class="ghost" id="btnLearnReset">学習を消す</button>
+    </div>
+    <p class="hint" style="margin:12px 0 0">
+      着順を入れるたびに、記録から「どの項目をどれだけ重く見るべきか」を当てはめ直します。
+      当てはめに使っていないレースで検算し、当てられ方が良くなったときだけ採用します。
+      良くならなければ既定の見方のままなので、学習で成績が落ちることはありません。
+      過去の予想は書き換えません（記録は当時のまま残ります）。
+    </p>
+  </section>
+
   <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
 
   <!-- 結果 -->
