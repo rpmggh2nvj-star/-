@@ -130,7 +130,20 @@
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
+      <label class="field">買い方
+        <select id="policy">
+          <option value="value">回収率重視</option>
+          <option value="balance" selected>バランス</option>
+          <option value="hit">的中率重視</option>
+        </select>
+      </label>
     </div>
+    <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
+    <p class="hint" style="margin:6px 0 0">
+      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
+      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
+      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
+    </p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
@@ -273,6 +286,32 @@
     </p>
   </section>
 
+  <!-- 記録から学ぶ -->
+  <section class="panel" id="learnPanel">
+    <div class="panel-head">
+      <h2>記録から学ぶ</h2>
+      <span class="hint" id="learnCount"></span>
+    </div>
+    <div class="learn-state s-off" id="learnState"></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline"><input type="checkbox" id="useTune" checked> 学習した見方を使う</label>
+    </p>
+    <p class="hint" id="learnNote" style="margin:8px 0 0"></p>
+    <ul class="learn-weights" id="learnWeights" hidden></ul>
+    <div class="learn-vs" id="learnVs" hidden></div>
+    <table class="cal-table" id="learnCal" hidden></table>
+    <div class="btn-row" style="margin-top:12px">
+      <button type="button" class="ghost" id="btnLearn">いま学習する</button>
+      <button type="button" class="ghost" id="btnLearnReset">学習を消す</button>
+    </div>
+    <p class="hint" style="margin:12px 0 0">
+      着順を入れるたびに、記録から「どの項目をどれだけ重く見るべきか」を当てはめ直します。
+      当てはめに使っていないレースで検算し、当てられ方が良くなったときだけ採用します。
+      良くならなければ既定の見方のままなので、学習で成績が落ちることはありません。
+      過去の予想は書き換えません（記録は当時のまま残ります）。
+    </p>
+  </section>
+
   <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
 
   <!-- 結果 -->
@@ -289,6 +328,7 @@
     </p>
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
+    <div class="hitchance" id="hitChance" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 

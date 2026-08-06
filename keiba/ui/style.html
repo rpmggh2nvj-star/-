@@ -380,6 +380,62 @@ label.chk input{width:16px;height:16px;accent-color:var(--red);}
 .pt-table td{padding:2px 6px;border-top:1px solid var(--line);}
 .pt-table td.need{font-weight:700;color:var(--ink);text-align:right;}
 .pt-table th:last-child{text-align:right;}
+.pt-table td.yen{text-align:right;color:var(--ink);font-weight:700;}
+
+/* 買い方の説明・想定的中率 */
+.policy-note{color:var(--ink);}
+label.inline{display:inline-flex;align-items:center;gap:5px;margin-right:14px;
+  font-weight:700;white-space:nowrap;flex:0 0 auto;}
+label.inline input{margin:0;}
+.warn-mini{color:var(--ink-soft);}
+.hitchance{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--turf);background:var(--turf-tint);
+  border-radius:12px;padding:9px 13px;margin-bottom:10px;
+}
+.hitchance .hc-k{font-size:.76rem;font-weight:800;color:var(--turf);letter-spacing:.03em;}
+.hitchance .hc-v{font-size:1.25rem;font-weight:800;color:var(--turf);
+  font-variant-numeric:tabular-nums;}
+.hitchance .hc-p{margin-left:auto;font-size:.72rem;color:var(--ink-soft);font-weight:700;}
+.hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
+.odds-need .v.ev-ng{color:var(--red);}
+
+/* ---------- 記録から学ぶ ---------- */
+.learn-state{
+  border-radius:11px;padding:10px 13px;font-size:.86rem;font-weight:800;
+  border:1px solid var(--line);background:var(--field);
+}
+.learn-state.s-on{border-color:var(--turf);background:var(--turf-tint);color:var(--turf);}
+.learn-weights{margin:10px 0 0;padding-left:1.1em;font-size:.78rem;line-height:1.75;}
+.learn-weights li{margin-bottom:2px;}
+.learn-vs{
+  margin-top:12px;border:1px solid var(--line);border-radius:11px;
+  padding:10px 13px;background:var(--field);
+}
+.learn-vs .vs-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:.8rem;font-weight:700;}
+.learn-vs .vs-row b{font-size:1.05rem;font-variant-numeric:tabular-nums;}
+.learn-vs .vs-vs{color:var(--ink-soft);}
+.learn-vs .vs-note{margin-top:6px;font-size:.74rem;line-height:1.6;}
+.learn-vs .vs-note.good{color:var(--turf);}
+.learn-vs .vs-note.bad{color:var(--ink-soft);}
+.cal-table{border-collapse:collapse;width:100%;font-size:.74rem;margin-top:12px;}
+.cal-table th{color:var(--ink-soft);font-weight:700;text-align:right;padding:4px 6px 2px;}
+.cal-table th:first-child{text-align:left;}
+.cal-table td{padding:3px 6px;border-top:1px solid var(--line);text-align:right;}
+.cal-table td:first-child{text-align:left;}
+.cal-table td.cal-over{color:var(--red);font-weight:700;}
+.cal-table td.cal-under{color:var(--turf);font-weight:700;}
+.review{
+  margin-top:10px;border-radius:10px;padding:9px 12px;
+  background:var(--gold-tint);border:1px solid var(--gold-line);
+}
+.review .rv-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:4px;}
+.review .rv-line{font-size:.78rem;line-height:1.7;}
+.under-ev{
+  font-size:.72rem;line-height:1.6;color:var(--red);
+  background:var(--red-tint);border:1px solid var(--red-line);
+  border-radius:9px;padding:7px 9px;
+}
 
 /* ---------- Bets ---------- */
 .bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}

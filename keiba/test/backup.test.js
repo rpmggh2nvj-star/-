@@ -89,7 +89,32 @@ t("一部の領域が無いバックアップは受け付ける", () => {
 t("中身の件数を先に示せる", () => {
   const s = B.summarize(B.build({history:[rec("a",1),rec("b",2)], jockeys:{a:1,b:2,c:3},
                                  jockeyNames:["x"], state:{}}, 5));
-  assert.deepStrictEqual(s, {savedAt:5, history:2, jockeys:3, jockeyNames:1, hasState:true});
+  assert.deepStrictEqual(s, {savedAt:5, history:2, jockeys:3, jockeyNames:1,
+                             hasState:true, hasTune:false, tuneRaces:0});
+  const withTune = B.summarize(B.build({history:[], jockeys:{}, jockeyNames:[], state:null,
+                                        tune:{weights:{form:1.2}, races:140}}, 5));
+  assert.strictEqual(withTune.hasTune, true);
+  assert.strictEqual(withTune.tuneRaces, 140);
+});
+
+t("学習した重みは、より多くのレースから学んだ方を残す", () => {
+  const a = {weights:{form:1.1}, races:60}, b = {weights:{form:1.4}, races:200};
+  assert.strictEqual(B.pickTune(a, b), b);
+  assert.strictEqual(B.pickTune(b, a), b);
+  assert.strictEqual(B.pickTune(null, b), b);
+  assert.strictEqual(B.pickTune(a, null), a);
+  assert.strictEqual(B.pickTune(null, null), null);
+  // 重みを持たない壊れたものは採らない
+  assert.strictEqual(B.pickTune(a, {races: 999}), a);
+});
+
+t("v1（学習の無い）バックアップも読める", () => {
+  const old = {format: B.FORMAT, version: 1, savedAt: 1,
+               data: {history: [rec("a", 1)], jockeys: {}, jockeyNames: [], state: null}};
+  assert.strictEqual(B.validate(old).ok, true, "v1 が読めない");
+  const m = B.merge({history: [], jockeys: {}, jockeyNames: [], tune: null}, old, {});
+  assert.strictEqual(m.history.length, 1);
+  assert.strictEqual(m.tune, null);
 });
 
 console.log("\n■ 復元（既定は「足す」）");

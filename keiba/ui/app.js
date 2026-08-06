@@ -6,6 +6,7 @@
 "use strict";
 
 const E = window.TurfEngine;
+const LN = window.TurfLearn;
 const $ = id => document.getElementById(id);
 
 const STORAGE_KEY = "turf-logic-state-v2";
@@ -78,7 +79,10 @@ function race(){
     distance: numOr($("distance").value, 1800),
     condition: numOr($("condition").value, 0),
     pace: $("pace").value,
-    budget: numOr($("budget").value, 5000)
+    budget: numOr($("budget").value, 5000),
+    policy: $("policy").value,
+    sanrenpuku: $("useSanrenpuku").checked,
+    sanrentan: $("useSanrentan").checked
   };
 }
 function applyRace(r){
@@ -91,7 +95,17 @@ function applyRace(r){
   if(r.condition != null) $("condition").value = r.condition;
   if(r.pace) $("pace").value = r.pace;
   if(r.budget != null) $("budget").value = r.budget;
+  if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
+  $("useSanrenpuku").checked = !!r.sanrenpuku;
+  $("useSanrentan").checked  = !!r.sanrentan;
+  syncPolicyNote();
   syncTrackUI();
+}
+
+/* 選んだ買い方が何をするのかを、選んだ場で見せる */
+function syncPolicyNote(){
+  const p = E.policyOf($("policy").value);
+  $("policyNote").textContent = p.lead;
 }
 
 /* ============================================================
@@ -366,10 +380,15 @@ function run(){
     if(!h.scratched && h.odds < 1){ alert("オッズは1.0以上で入力してください（馬番 " + h.num + "）。"); return; }
   }
 
-  const rows = E.analyze(r, hs);
+  const tn = activeTune();
+  const rows = E.analyze(r, hs, tn);
   // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
-  E.fillBreakEven(r, hs, rows);
-  const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
+  E.fillBreakEven(r, hs, rows, tn);
+  const {bets, value, dropped, grade, upset, spend, policy, hitChance} =
+    E.buildBets(rows, r.budget, {
+      policy: r.policy,
+      extras: {sanrenpuku: r.sanrenpuku, sanrentan: r.sanrentan}
+    });
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -462,6 +481,18 @@ function run(){
     ? `予算 ${yen(r.budget)} ／ 投入 ${yen(spend)} ／ 使用 ${yen(spent)}`
     : `予算 ${yen(r.budget)} ／ 使用 0円`;
 
+  /* この買い目で「何か1点でも当たる」確率。券種をまたぐ的中の重なりを
+     数え上げて出している。当たる回数がどれくらい見込めるかを先に示す。 */
+  const hc = $("hitChance");
+  hc.hidden = !bets.length;
+  if(bets.length){
+    hc.innerHTML =
+      `<span class="hc-k">この買い目で何か当たる確率</span>` +
+      `<span class="hc-v mono">${(hitChance*100).toFixed(0)}%</span>` +
+      `<span class="hc-p">買い方：${escapeHtml(policy.label)}</span>` +
+      `<span class="hc-note">推定勝率から出した見込みです。実際はこれより数ポイント下がります。</span>`;
+  }
+
   $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
@@ -471,22 +502,26 @@ function run(){
         ${x.evKnown != null
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
           : x.evEst != null
-            ? `<span class="k">推定期待値</span><span class="v ev-ok">${x.evEst.toFixed(2)}</span>`
+            ? `<span class="k">推定期待値</span><span class="v ${x.evEst >= 1 ? "ev-ok" : "ev-ng"}">${x.evEst.toFixed(2)}</span>`
             : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
+      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割っています。当たる回数を支えるために買う1点で、
+        この点だけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
-        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
+        <tr><th>買い目</th><th>金額</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
         ${x.points.map(pt => `<tr>
           <td class="mono">${escapeHtml(pt.combo)}</td>
+          <td class="mono yen">${yen(pt.yen != null ? pt.yen : x.unit)}</td>
           <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
           <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
           <td class="mono need">${pt.ev != null ? pt.ev.toFixed(2) : "—"}</td>
         </tr>`).join("")}
       </table>
-      <div class="hint">実際のオッズが必要オッズを下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
+      <div class="hint">金額は点ごとに変えてあります（資金がいちばん速く増える割合に比例）。
+        実際のオッズが必要オッズを下回る点は、その点だけ外してください。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
-      <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
+      <div class="money">${x.combos.length > 1 ? "" : "1点 "}<b>${yen(x.total)}</b>${x.combos.length > 1 ? " ／ " + x.combos.length + "点" : ""}</div>
     </div>`).join("")
     : `<p class="empty">このレースは買いません。資金を次のレースに残してください。</p>`;
 
@@ -497,7 +532,11 @@ function run(){
                "実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。");
   }
   const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
-  if(cutN) notes.push(`推定期待値が1.0を割る ${cutN}点 は、はじめから外してあります。`);
+  if(cutN) notes.push(`割の合わない ${cutN}点 は、はじめから外してあります。`);
+  if(bets.length && !r.sanrenpuku && !r.sanrentan){
+    notes.push("三連複・三連単は出していません。控除率が高いうえ推定の誤差も大きく、" +
+               "検証では的中率でも回収率でも複勝・ワイドに負けたためです。買う場合は上のチェックを入れてください。");
+  }
   $("droppedNote").textContent = notes.join(" ");
 
   lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};
@@ -679,6 +718,7 @@ function loadSample(){
 }
 
 /* ---------- イベント ---------- */
+$("policy").addEventListener("change", syncPolicyNote);
 $("track").addEventListener("change", syncTrackUI);
 $("surface").addEventListener("change", syncTrackUI);
 $("course").addEventListener("change", syncTrackUI);
@@ -826,6 +866,7 @@ $("importFile").addEventListener("change", e => {
 /* ---------- 初期表示 ---------- */
 buildTrackSelect();
 syncTrackUI();
+syncPolicyNote();
 addHorses(6);
 
 /* ============================================================
@@ -834,6 +875,36 @@ addHorses(6);
    集計は TurfHistory（keiba/history.js）に委ねる。
    ============================================================ */
 const HIST_KEY = "turf-logic-history-v1";
+const TUNE_KEY = "turf-logic-tune-v1";
+
+/* ============================================================
+   記録から学んだ重み
+   ------------------------------------------------------------
+   着順を入れるたびに学習をやり直す。学習が採用されるのは、
+   当てはめに使っていないレースで当てられ方が良くなったときだけ。
+   採用されなければ既定のまま動く（＝悪くならない）。
+   ============================================================ */
+let tune = null;          // 採用中の重み。null なら既定
+let lastLearn = null;     // 直近の学習結果（採用・見送りの理由を出すため）
+let learnBusy = false;
+
+function loadTune(){
+  try{
+    const o = JSON.parse(localStorage.getItem(TUNE_KEY) || "null");
+    return (o && o.weights) ? o : null;
+  }catch(e){ return null; }
+}
+function saveTune(t){
+  try{
+    if(t) localStorage.setItem(TUNE_KEY, JSON.stringify(t));
+    else localStorage.removeItem(TUNE_KEY);
+    return true;
+  }catch(e){ return false; }
+}
+// 学習を使うかどうか（切っておけば既定の見方に戻る）
+function tuneOn(){ return $("useTune") ? $("useTune").checked : true; }
+function activeTune(){ return tuneOn() ? tune : null; }
+
 const H = window.TurfHistory;
 
 function loadHistory(){
@@ -956,6 +1027,7 @@ function renderHistory(){
           <button type="button" class="primary" data-act="save">結果を記録</button>
           <button type="button" class="danger" data-act="delete">削除</button>
         </div>
+        <div class="review" hidden></div>
       </div>
     </details>`;
   }).join("");
@@ -989,7 +1061,130 @@ $("histList").addEventListener("click", e => {
   saveHistory(history);
   renderHistory();
   renderJockeys();
+  showReview(r);
+  autoRelearn();
 });
+
+/* ---------- 1レースの振り返り ----------
+   着順を入れた直後に、そのレースで何を外したのかを出す。 */
+function showReview(rec){
+  const box = document.querySelector(`.hist[data-id="${rec.id}"] .review`);
+  if(!box) return;
+  const rv = LN.review(rec, activeTune());
+  if(!rv){ box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<div class="rv-head">振り返り</div>` +
+    rv.lines.map(l => `<div class="rv-line">${escapeHtml(l)}</div>`).join("");
+}
+
+/* ============================================================
+   学習パネル
+   ============================================================ */
+/* 学習は記録300件で1〜2秒（端末によってはその数倍）かかる。
+   着順を1つ入れるたびに回すと、そのぶん画面が固まる。
+   前回の学習から一定件数ぶん増えたときだけ自動でやり直し、
+   すぐ反映したいときは「いま学習する」を押してもらう。 */
+const RELEARN_EVERY = 5;
+
+function autoRelearn(){
+  const usable = LN.samples(history).length;
+  if(usable < LN.MIN_RACES) return;
+  const since = usable - (lastLearn && lastLearn.races != null ? lastLearn.races
+                          : (tune ? tune.races : 0));
+  if(lastLearn && since < RELEARN_EVERY) return;
+  relearn();
+}
+
+function relearn(opt){
+  if(learnBusy) return;
+  learnBusy = true;
+  const note = $("learnNote");
+  if(note) note.textContent = "記録を数え直しています…";
+  /* 記録が多いと数秒かかる。画面を描き替えてから計算に入る。 */
+  setTimeout(() => {
+    try{
+      const out = LN.learn(history, {now: Date.now()});
+      lastLearn = out;
+      if(out.ok){
+        tune = out.tune;
+        saveTune(tune);
+      } else if((opt && opt.clearOnFail) || out.reason === "few"){
+        // 学ぶものが無い状態に戻ったら、既定の見方へ戻す
+        if(out.reason === "few"){ tune = null; saveTune(null); }
+      }
+    } finally {
+      learnBusy = false;
+      renderLearn();
+    }
+  }, 30);
+}
+
+function renderLearn(){
+  const panel = $("learnPanel");
+  if(!panel) return;
+  const usable = LN.samples(history).length;
+  $("learnCount").textContent = `学習に使える記録 ${usable}件`;
+
+  const on = tuneOn();
+  $("learnState").className = "learn-state " + (tune && on ? "s-on" : "s-off");
+  $("learnState").textContent = tune
+    ? (on ? `${tune.races}レースから学習した見方で予想します` : "学習を切っています（既定の見方）")
+    : "まだ学習していません（既定の見方）";
+
+  const note = $("learnNote");
+  if(lastLearn) note.textContent = lastLearn.message;
+  else if(usable < LN.MIN_RACES)
+    note.textContent = `着順まで入った記録が ${usable} レースです。` +
+      `${LN.MIN_RACES} レースから学習を試し始めます。` +
+      `実際に見方が変わるのは、たいてい100レース前後からです。`;
+  else note.textContent = "「いま学習する」を押すと、記録から見方を当てはめ直します。";
+
+  // 学んだ内容
+  const lines = tune ? LN.explain(tune) : [];
+  $("learnWeights").innerHTML = lines.length
+    ? lines.map(x => `<li>${escapeHtml(x.text)}</li>`).join("")
+    : "";
+  $("learnWeights").hidden = !lines.length;
+
+  // 市場に勝てているか
+  const vm = LN.versusMarket(history, activeTune());
+  const vmBox = $("learnVs");
+  vmBox.hidden = !vm;
+  if(vm){
+    vmBox.innerHTML =
+      `<div class="vs-row"><span>1位指名が1着</span>` +
+      `<b class="mono">${(vm.ourWin*100).toFixed(1)}%</b>` +
+      `<span class="vs-vs">対</span><span>1番人気</span>` +
+      `<b class="mono">${(vm.favWin*100).toFixed(1)}%</b></div>` +
+      `<div class="vs-note ${vm.beatsMarket ? "good" : "bad"}">` +
+      (vm.beatsMarket
+        ? "予想はオッズより当たっています。自分の見立てに寄せる価値があります。"
+        : "予想はまだオッズを上回っていません。この状態では、オッズどおりに買うほうが正しくなります。") +
+      `（${vm.races}レースで検算）</div>`;
+  }
+
+  // 較正（出した勝率と実際）
+  const cal = LN.calibration(history, activeTune()).filter(c => c.n >= 20);
+  const calBox = $("learnCal");
+  calBox.hidden = !cal.length;
+  if(cal.length){
+    calBox.innerHTML =
+      `<tr><th>推定勝率</th><th>頭数</th><th>出した</th><th>実際</th></tr>` +
+      cal.map(c => `<tr>
+        <td class="mono">${(c.from*100).toFixed(0)}〜${Math.min(100, c.to*100).toFixed(0)}%</td>
+        <td class="mono">${c.n}</td>
+        <td class="mono">${(c.expect*100).toFixed(1)}%</td>
+        <td class="mono ${c.actual < c.expect * 0.75 ? "cal-over" : c.actual > c.expect * 1.3 ? "cal-under" : ""}">${(c.actual*100).toFixed(1)}%</td>
+      </tr>`).join("");
+  }
+}
+
+$("btnLearn") && $("btnLearn").addEventListener("click", () => relearn({clearOnFail:true}));
+$("btnLearnReset") && $("btnLearnReset").addEventListener("click", () => {
+  if(!confirm("学習した重みを消して、既定の見方に戻します。よろしいですか？\n（予想の記録は消えません。もう一度学習すれば戻せます）")) return;
+  tune = null; lastLearn = null; saveTune(null); renderLearn();
+});
+$("useTune") && $("useTune").addEventListener("change", renderLearn);
 
 /* ---------- 予想の保存 ---------- */
 $("btnSaveRace").addEventListener("click", () => {
@@ -1007,6 +1202,8 @@ $("btnSaveRace").addEventListener("click", () => {
 
 renderGradeGuide();
 renderHistory();
+tune = loadTune();
+renderLearn();
 
 /* ============================================================
    データの保存（端末の外へ）
@@ -1078,7 +1275,8 @@ function collectStores(){
     history: history,
     jockeys: jockeyRatings,
     jockeyNames: knownJockeyNames,
-    state: read(STORAGE_KEY, null)
+    state: read(STORAGE_KEY, null),
+    tune: tune
   };
 }
 
@@ -1086,6 +1284,7 @@ function applyStores(s){
   history = H.normalize(s.history || []);
   jockeyRatings = s.jockeys || {};
   knownJockeyNames = s.jockeyNames || [];
+  if(s.tune !== undefined){ tune = (s.tune && s.tune.weights) ? s.tune : null; saveTune(tune); }
   saveHistory(history);
   saveJockeys(jockeyRatings);
   try{ localStorage.setItem(JOCKEY_NAMES_KEY, JSON.stringify(knownJockeyNames)); }catch(e){}
@@ -1094,6 +1293,7 @@ function applyStores(s){
   }
   renderHistory();
   renderJockeys();
+  renderLearn();
 }
 
 function backupJson(){

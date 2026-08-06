@@ -17,7 +17,9 @@
   "use strict";
 
   const FORMAT = "turf-logic-backup";
-  const FORMAT_VERSION = 1;
+  /* v2 で「学習した重み」を追加した。v1 のバックアップは学習が無いだけで
+     そのまま読める（欠けた保存領域は既定値で埋める）。 */
+  const FORMAT_VERSION = 2;
 
   /* 保存対象。key は localStorage のキー、kind は中身の形。
      新しい保存領域が増えたらここに足せば、書き出しにも復元にも入る。 */
@@ -25,7 +27,8 @@
     {name:"history",      key:"turf-logic-history-v1",      kind:"list",  label:"予想の記録"},
     {name:"jockeys",      key:"turf-logic-jockeys-v1",      kind:"map",   label:"騎手評価"},
     {name:"jockeyNames",  key:"turf-logic-jockey-names-v1", kind:"array", label:"騎手名の辞書"},
-    {name:"state",        key:"turf-logic-state-v2",        kind:"value", label:"入力中のレース"}
+    {name:"state",        key:"turf-logic-state-v2",        kind:"value", label:"入力中のレース"},
+    {name:"tune",         key:"turf-logic-tune-v1",         kind:"value", label:"学習した重み"}
   ];
 
   /* ---------- 書き出し ---------- */
@@ -100,7 +103,9 @@
       history: n(d.history),
       jockeys: n(d.jockeys),
       jockeyNames: n(d.jockeyNames),
-      hasState: !!d.state
+      hasState: !!d.state,
+      hasTune: !!(d.tune && d.tune.weights),
+      tuneRaces: (d.tune && d.tune.races) || 0
     };
   }
 
@@ -153,8 +158,17 @@
       jockeys: jockeys,
       jockeyNames: names,
       state: opts.restoreState && inc.state ? inc.state : (cur.state || null),
+      /* 学習した重みは、より多くのレースから学んだ方を残す。
+         記録そのものが混ざると学習し直せるので、これは暫定値でよい。 */
+      tune: pickTune(cur.tune, inc.tune),
       added: added
     };
+  }
+
+  function pickTune(a, b){
+    const n = t => (t && t.weights && t.races) ? t.races : -1;
+    if(n(a) < 0 && n(b) < 0) return a || b || null;
+    return n(b) > n(a) ? b : a;
   }
 
   /* 同じ id の記録が2つあるときの選び方。
@@ -174,6 +188,7 @@
       jockeys: inc.jockeys || {},
       jockeyNames: inc.jockeyNames || [],
       state: inc.state || null,
+      tune: inc.tune || null,
       added: {history: (inc.history || []).length,
               jockeys: Object.keys(inc.jockeys || {}).length,
               jockeyNames: (inc.jockeyNames || []).length}
@@ -182,6 +197,6 @@
 
   return {
     FORMAT, FORMAT_VERSION, STORES,
-    build, fileName, validate, summarize, merge, replace, pickRecord
+    build, fileName, validate, summarize, merge, replace, pickRecord, pickTune
   };
 });

@@ -425,16 +425,52 @@ function polyfill(){
     });
   });
 
-  t("軸固定をやめたことで、的中確率が上がっている", () => {
+  t("実データで、方針ごとに的中率と点数が並ぶ", () => {
     const r = Object.assign({pace:"mid", condition:0, budget:5000}, MK.race);
-    const {bets} = E.buildBets(E.analyze(r, MK.horses), 5000);
-    const umaren = bets.find(b => b.name === "馬連");
-    assert.ok(umaren, "馬連が無い");
-    // 軸固定のころは 3-5 と 3-11 だけで合計6.1%だった
-    assert.ok(umaren.hit > 0.10,
-      `馬連の合計的中が ${(umaren.hit*100).toFixed(1)}% しかない`);
-    umaren.points.forEach(pt =>
-      assert.ok(pt.ev >= 1.0, `${pt.combo} の推定期待値が ${pt.ev.toFixed(2)}`));
+    const rows = E.analyze(r, MK.horses);
+    const out = ["value", "balance", "hit"].map(k => E.buildBets(rows, 5000, {policy:k}));
+    if(process.env.SHOW_BETS){
+      out.forEach((o, i) => {
+        console.log(`\n   [${["回収率重視","バランス","的中率重視"][i]}] ` +
+          `何か当たる確率 ${(o.hitChance*100).toFixed(1)}%  投入 ${o.spend}円`);
+        o.bets.forEach(b => console.log("     " + b.name.padEnd(18) +
+          b.combos.join(" ").padEnd(24) +
+          " 的中" + (b.hit*100).toFixed(1) + "%  EV" +
+          ((b.evKnown != null ? b.evKnown : b.evEst) || 0).toFixed(2) +
+          "  " + b.units.join("/") + "円" + (b.underEv ? "  ←期待値1割れ" : "")));
+      });
+    }
+    // 的中率重視ほど「何か当たる確率」が高い、が守られていること
+    assert.ok(out[1].hitChance > out[0].hitChance,
+      `バランスが回収率重視を上回っていない: ${out[0].hitChance} → ${out[1].hitChance}`);
+    assert.ok(out[2].hitChance >= out[1].hitChance,
+      `的中率重視がバランスを下回っている: ${out[1].hitChance} → ${out[2].hitChance}`);
+    // 軸固定のころは馬連 3-5 と 3-11 だけで合計6.1%しかなかった
+    assert.ok(out[1].hitChance > 0.30,
+      `バランスで何か当たる確率が ${(out[1].hitChance*100).toFixed(1)}% しかない`);
+    // どの方針でも、予算を超えて買わない
+    out.forEach((o, i) => {
+      const used = o.bets.reduce((a, b) => a + b.total, 0);
+      assert.ok(used <= 5000, `${i}: 予算 5000 に対し ${used} 円使っている`);
+    });
+  });
+
+  t("実データで、資金の増え方の大きい順に金額が厚くなる", () => {
+    const r = Object.assign({pace:"mid", condition:0, budget:5000}, MK.race);
+    const rows = E.analyze(r, MK.horses);
+    const {bets} = E.buildBets(rows, 5000, {policy:"balance"});
+    bets.filter(b => b.combos.length > 1).forEach(b => {
+      assert.strictEqual(b.units.length, b.combos.length, b.name + " の金額が点数と合わない");
+      assert.ok(b.units.every(u => u >= 100 && u % 100 === 0),
+        b.name + " に100円未満または端数の金額がある: " + b.units.join("/"));
+      // 賭ける割合（Kelly の f）の大きい点ほど厚い
+      for(let i = 1; i < b.points.length; i++){
+        if(b.points[i-1].f > b.points[i].f + 1e-12){
+          assert.ok(b.units[i-1] >= b.units[i],
+            `${b.name}: ${b.points[i-1].combo} より ${b.points[i].combo} が厚い`);
+        }
+      }
+    });
   });
 
   t("オッズ・斤量・脚質・近走も12頭ぶん揃う", () => {

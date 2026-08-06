@@ -136,9 +136,76 @@
   }
 
   /* ============================================================
+     学習した重み
+     ------------------------------------------------------------
+     記録した着順から、どの項目をどれだけ重く見るべきかを学ぶ。
+     learn.js が求めた倍率をここで受け取る。既定はすべて 1.0 で、
+     何も学習していない状態＝これまでと同じ計算になる。
+
+     重みの当てはめ（learn.js）は、この関数と同じ計算を使わなければ
+     意味がない。そのため softmax とブレンドを scoreOf / blendProbs に
+     切り出し、予想と学習の両方が同じ道を通るようにしてある。
+     ============================================================ */
+  const PART_KEYS = ["form","jockey","training","dist","baba","pace","kinryo","weight","waku"];
+  const PART_LABEL = {
+    form:"近走", jockey:"騎手", training:"調教", dist:"距離適性", baba:"馬場適性",
+    pace:"展開（脚質）", kinryo:"斤量", weight:"馬体重増減", waku:"枠順"
+  };
+  const BLEND_BASE = 0.45;        // W = 1 − BLEND_BASE × 情報量
+
+  function multOf(tune, k){
+    const m = tune && tune.weights;
+    const v = m ? m[k] : null;
+    return (typeof v === "number" && isFinite(v) && v > 0) ? v : 1;
+  }
+  function scoreOf(parts, tune){
+    let s = 0;
+    for(let i = 0; i < PART_KEYS.length; i++){
+      const k = PART_KEYS[i];
+      if(parts[k] != null) s += parts[k] * multOf(tune, k);
+    }
+    return s;
+  }
+
+  const stdOf = arr => {
+    const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
+    return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
+  };
+
+  /* 指数 → モデル勝率（softmax）→ 市場とのブレンド。
+     予想（analyze）と学習（learn.js の当てはめ）が同じ結果になるよう、
+     ここだけを通す。 */
+  function blendProbs(scores, markets, info, tune){
+    /* 温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
+       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
+       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
+       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
+       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
+    const marketSpread = Math.max(0.6, stdOf(markets.map(v => Math.log(Math.max(1e-9, v)))));
+    const T = Math.min(14, Math.max(4, stdOf(scores) / marketSpread));
+    const maxScore = Math.max.apply(null, scores);
+    const exps = scores.map(v => Math.exp((v - maxScore) / T));
+    const expSum = exps.reduce((a,b)=>a+b, 0);
+    const model = exps.map(v => v / expSum);
+
+    /* モデル勝率 × 市場勝率 の幾何ブレンド。
+       オッズは極めて強い予測子なので、単独モデルを市場で補正して過信を防ぐ。
+       市場の重みは入力の情報量で決まる。判断材料がなければ市場そのもの（W=1）に
+       収束し、根拠のない「妙味」を出さない。
+       BLEND_BASE は「材料が揃ったとき、どこまで自分の見立てに寄せるか」で、
+       記録が貯まれば learn.js がこの値も学習し直す。 */
+    const base = (tune && typeof tune.blend === "number" && isFinite(tune.blend))
+      ? Math.min(0.9, Math.max(0, tune.blend)) : BLEND_BASE;
+    const W = 1 - base * info;
+    const bl = model.map((m, i) => Math.pow(markets[i], W) * Math.pow(m, 1 - W));
+    const blSum = bl.reduce((a,b)=>a+b, 0);
+    return {model: model, prob: bl.map(v => v / blSum), T: T, W: W};
+  }
+
+  /* ============================================================
      本体：能力指数 → 推定勝率
      ============================================================ */
-  function analyze(r, hs){
+  function analyze(r, hs, tune){
     /* 出走取消・除外の馬は走らない。オッズも付かないため、
        残したままだと市場推定勝率の分母が狂い、枠順の有利不利もずれる。 */
     hs = hs.filter(h => !h.scratched);
@@ -183,48 +250,24 @@
       // 7) 枠順
       parts.waku = wakuBonus(r, h, n);
 
-      const score = Object.keys(parts).reduce((a,k)=>a+parts[k], 0);
-      return {h, parts, score, market: impl[i] / implSum};
+      return {h, parts, score: scoreOf(parts, tune), market: impl[i] / implSum};
     });
 
-    /* 能力指数 → モデル勝率（softmax）
-
-       温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
-       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
-       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
-       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
-       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
-    const std = arr => {
-      const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
-      return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
-    };
-    const marketSpread = Math.max(0.6, std(rows.map(x => Math.log(x.market))));
-    const scoreSpread = std(rows.map(x => x.score));
-    const T = Math.min(14, Math.max(4, scoreSpread / marketSpread));
-    const maxScore = Math.max.apply(null, rows.map(x => x.score));
-    const exps = rows.map(x => Math.exp((x.score - maxScore) / T));
-    const expSum = exps.reduce((a,b)=>a+b, 0);
-    rows.forEach((x, i) => { x.model = exps[i] / expSum; });
-
-    // モデル勝率 × 市場勝率 の幾何ブレンド
-    // オッズは極めて強い予測子なので、単独モデルを市場で補正して過信を防ぐ。
-    // 市場の重みは入力の情報量で決まる。判断材料がなければ市場そのもの（W=1）に
-    // 収束し、根拠のない「妙味」を出さない。
     const info = infoLevelOf(hs);
-    const W = 1 - 0.45 * info;                       // 情報量1.0 → 0.55 / 0 → 1.00
-    const bl = rows.map(x => Math.pow(x.market, W) * Math.pow(x.model, 1 - W));
-    const blSum = bl.reduce((a,b)=>a+b, 0);
+    const b = blendProbs(rows.map(x => x.score), rows.map(x => x.market), info, tune);
     rows.forEach((x, i) => {
-      x.prob = bl[i] / blSum;
-      x.ev   = x.prob * x.h.odds;      // 単勝の期待回収率
-      x.edge = x.prob / x.market;      // 市場評価との乖離（1.00＝市場並み）
+      x.model = b.model[i];
+      x.prob  = b.prob[i];
+      x.ev    = x.prob * x.h.odds;      // 単勝の期待回収率
+      x.edge  = x.prob / x.market;      // 市場評価との乖離（1.00＝市場並み）
     });
 
     rows.sort((a,b) => b.prob - a.prob);
     rows.forEach((x, i) => { x.rank = i + 1; });
     rows.infoLevel = info;
-    rows.temperature = T;
-    rows.marketWeight = W;
+    rows.temperature = b.T;
+    rows.marketWeight = b.W;
+    rows.tune = tune || null;
     rows.race = r;
     rows.upset = upsetRisk(r, rows);
     return rows;
@@ -299,9 +342,11 @@
     if(level === "high"){
       return [
         "軸を1頭に決め打ちせず、相手を5頭まで広げます。",
-        "単勝の比重を下げ、ワイド・三連複で面を取ります（1点あたりを薄く、点数を多く）。",
+        "単勝の比重を下げ、複勝・ワイドで面を取ります（1点あたりを薄く、点数を多く）。",
         "推定勝率そのものが当てにならなくなる局面なので、投入額を3割減らします。",
-        "人気馬の単勝で取り返そうとしないでください。荒れるレースほど人気馬の期待値は下がります。"
+        "人気馬の単勝で取り返そうとしないでください。荒れるレースほど人気馬の期待値は下がります。",
+        "当たる回数を増やしたいなら、三連単に手を伸ばすのではなく買い方を「的中率重視」にしてください。" +
+        "荒れるレースほど三連単の推定は外れます。"
       ];
     }
     if(level === "mid"){
@@ -313,8 +358,8 @@
     }
     return [
       "相手は2頭に絞ります。広げても必要オッズが上がるだけで割に合いません。",
-      "単勝・馬連を中心に、点数を絞って厚く買います。",
-      "三連複は出しません（点数のわりに必要オッズが高くなります）。"
+      "単勝・複勝を中心に、点数を絞って厚く買います。",
+      "点数を増やしても当たる回数は増えますが、増えるぶん以上に必要オッズが上がります。"
     ];
   }
 
@@ -417,13 +462,13 @@
      二分法で探す。近似式を置かず本体の計算をそのまま使うため、
      表示している推定勝率と必ず整合する。
      ============================================================ */
-  function breakEvenOdds(r, hs, num){
+  function breakEvenOdds(r, hs, num, tune){
     const live = hs.filter(h => !h.scratched);
     if(!live.some(h => h.num === num)) return null;
 
     const evAt = o => {
       const copy = live.map(h => h.num === num ? Object.assign({}, h, {odds: o}) : h);
-      const x = analyze(r, copy).find(y => y.h.num === num);
+      const x = analyze(r, copy, tune).find(y => y.h.num === num);
       return x ? x.ev : 0;
     };
 
@@ -443,8 +488,8 @@
   }
 
   // 全馬ぶんまとめて求め、rows に minOdds として持たせる
-  function fillBreakEven(r, hs, rows){
-    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num); });
+  function fillBreakEven(r, hs, rows, tune){
+    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num, tune); });
     return rows;
   }
 
@@ -526,9 +571,163 @@
     sanrenpuku: 0.25, sanrentan: 0.275
   };
 
+  /* 推定した比を、そのままの重さでは信じない（＝勝者の呪いへの備え）
+     ------------------------------------------------------------
+     人工のレースを大量に作って測ったところ、推定期待値の帯ごとの
+     「真の期待値」と「真の的中確率」はこうなっていた（馬連の例）。
+
+       推定EV 1.05 → 真のEV 0.70 ／ 真の的中 2.69%
+       推定EV 1.35 → 真のEV 0.75 ／ 真の的中 2.17%
+       推定EV 2.26 → 真のEV 0.85 ／ 真の的中 1.21%
+
+     推定期待値が上がっても真の期待値はほとんど上がらず、
+     真の的中確率はむしろ下がっていく。つまり「推定期待値が高い買い目」は
+     多くの場合「モデルが的中確率を読み違えている買い目」でしかない。
+     期待値の高い順に取ると、読み違いの大きい順に取ってしまう。
+
+     そこで比を λ 乗して縮める。λ は券種ごとの推定の確かさで決める。
+     単勝はオッズが実測値なので縮めない（比ではなく実際の期待値である）。
+     着順まで当てる券種ほど Harville の仮定に強く依存するので、強く縮める。 */
+  const RELIABILITY = {
+    tan: 1.00, fuku: 0.80,
+    umaren: 0.62, wide: 0.62,
+    sanrenpuku: 0.52, sanrentan: 0.38
+  };
+
   function comboEv(pModel, pMarket, kind){
-    if(!(pMarket > 0)) return 0;
-    return (pModel / pMarket) * (1 - (TAKEOUT[kind] != null ? TAKEOUT[kind] : 0.25));
+    if(!(pMarket > 0) || !(pModel > 0)) return 0;
+    const take = TAKEOUT[kind] != null ? TAKEOUT[kind] : 0.25;
+    const lam = RELIABILITY[kind] != null ? RELIABILITY[kind] : 0.5;
+    return Math.pow(pModel / pMarket, lam) * (1 - take);
+  }
+
+  /* ---------- 資金の増え方（Kelly） ----------
+     期待値がいちばん高い1点に集中するのは、モデルが正しいときだけ正しい。
+     実際には推定に誤差があるので、資金がいちばん速く増える買い方を選ぶ。
+
+     的中確率 p、払戻オッズ O の1点に資金の割合 f を賭けるとき、
+     最適な f と、そのときの資金の増え方は次のようになる。
+
+       f* = (期待値 − 1) ÷ (期待値 × O) = p(EV−1)/EV²
+       増え方 ∝ p × (EV−1)² ÷ EV²
+
+     この「増え方」で並べると、当たりにくい大穴は自動的に後ろへ下がる。
+       的中 10.7% ・期待値 1.53 → 0.0128
+       的中  2.1% ・期待値 3.67 → 0.0111
+     期待値では後者が3倍上だが、資金の増え方では前者が上に来る。 */
+  function kellyFraction(hit, ev){
+    if(!(hit > 0) || !(ev > 1)) return 0;
+    return hit * (ev - 1) / (ev * ev);
+  }
+  function growth(hit, ev){
+    if(!(hit > 0) || !(ev > 1)) return 0;
+    return hit * (ev - 1) * (ev - 1) / (ev * ev);
+  }
+
+  /* ============================================================
+     買い方の方針
+     ------------------------------------------------------------
+     「当たる回数」と「回収率」は、ある所から先は交換関係にある。
+     どちらを優先するかは道具が勝手に決めてよい話ではないので、
+     方針として選べるようにした。人工のレースで測った目安は次のとおり。
+
+       複勝を推定上位3頭に機械的に  … 的中 90% ／ 回収 82%
+       複勝を推定上位2頭に機械的に  … 的中 81% ／ 回収 82%
+       複勝を期待値1.0超だけ（2頭） … 的中 34% ／ 回収 89%
+       単勝を期待値1位1頭だけ        … 的中  8% ／ 回収 96%
+       三連複を上位4頭BOX            … 的中 15% ／ 回収 60%
+       三連単を上位3頭BOX            … 的中  6% ／ 回収 44%
+
+     三連複・三連単は、的中率でも回収率でも複勝・ワイドに負けている。
+     控除率が高いうえ、推定の誤差がいちばん大きいためで、
+     どちらの方針でも既定では買わない（必要なら明示的に足す）。 */
+  const POLICIES = {
+    value: {
+      key:"value", label:"回収率重視",
+      lead:"推定の確かなものだけを、少ない点数で買います。当たる回数は減ります。",
+      tanScale: 1.3, fukuAlways: 0, fukuValue: 2, fukuMinHit: 0.25, fukuFloor: 1.00,
+      kinds: {
+        wide:   {minEv:1.06, minHit:0.04,  min:2, max:3, reserve:1, cover:0.45, ratio:0.20},
+        umaren: {minEv:1.12, minHit:0.010, min:2, max:3, reserve:1, cover:0.20, ratio:0.12}
+      }
+    },
+    balance: {
+      key:"balance", label:"バランス",
+      lead:"当たる回数と回収率のつり合いを取ります。既定の買い方です。",
+      tanScale: 1.0, fukuAlways: 1, fukuValue: 1, fukuMinHit: 0.25, fukuFloor: 0.82,
+      kinds: {
+        wide:   {minEv:1.02, minHit:0.04,  min:2, max:4, reserve:2, cover:0.55, ratio:0.22},
+        umaren: {minEv:1.10, minHit:0.010, min:2, max:4, reserve:2, cover:0.25, ratio:0.12}
+      }
+    },
+    hit: {
+      key:"hit", label:"的中率重視",
+      lead:"当たる回数を増やす買い方です。期待値が 1.0 に届かない複勝も買うので、" +
+           "長い目で見た回収率はその分下がります。",
+      tanScale: 0.8, fukuAlways: 3, fukuValue: 0, fukuMinHit: 0.28, fukuFloor: 0.75,
+      kinds: {
+        wide:   {minEv:0.95, minHit:0.05,  min:3, max:5, reserve:3, cover:0.70, ratio:0.26},
+        umaren: {minEv:1.05, minHit:0.012, min:2, max:4, reserve:3, cover:0.30, ratio:0.12}
+      }
+    }
+  };
+  const POLICY_KEYS = ["value", "balance", "hit"];
+  const POLICY_DEFAULT = "balance";
+  function policyOf(key){ return POLICIES[key] || POLICIES[POLICY_DEFAULT]; }
+
+  /* 明示的に足したときだけ使う券種。既定では出さない。 */
+  const EXTRA_KINDS = {
+    sanrenpuku: {minEv:1.20, minHit:0.004,  min:2, max:6, reserve:3, cover:0.18, ratio:0.14},
+    sanrentan:  {minEv:1.45, minHit:0.0008, min:3, max:8, reserve:4, cover:0.05, ratio:0.12}
+  };
+
+  /* ---------- このレースで「何か1点でも当たる」確率 ----------
+     券種をまたぐと的中は重なる（複勝が当たるときはワイドも当たりやすい）。
+     足し算では出せないので、1〜3着の並びを全通り数え上げて、
+     買った点のどれかが当たる並びの確率を合計する。Harville の下では厳密。 */
+  function hitChance(bets, rows){
+    const n = rows.length;
+    if(!bets || !bets.length || n < 3) return 0;
+    const p = rows.map(x => x.prob);
+    const idx = {};
+    rows.forEach((x, i) => { idx[x.h.num] = i; });
+    const places = placePositions(n);
+
+    const pts = [];
+    bets.forEach(b => {
+      (b.combos || []).forEach(c => {
+        const ii = String(c).split("-").map(s => idx[parseInt(s, 10)]);
+        if(ii.some(v => v == null)) return;
+        pts.push({kind: b.kind, ii: ii});
+      });
+    });
+    if(!pts.length) return 0;
+
+    let sum = 0;
+    for(let a = 0; a < n; a++)
+      for(let b = 0; b < n; b++){
+        if(b === a) continue;
+        for(let c = 0; c < n; c++){
+          if(c === a || c === b) continue;
+          const q = orderProb(p, a, b, c);
+          if(!(q > 0)) continue;
+          const top = [a, b, c];
+          let hit = false;
+          for(let k = 0; k < pts.length && !hit; k++){
+            const ii = pts[k].ii;
+            switch(pts[k].kind){
+              case "tan":        hit = ii[0] === a; break;
+              case "fuku":       hit = top.slice(0, places).indexOf(ii[0]) >= 0; break;
+              case "umaren":     hit = (ii[0]===a && ii[1]===b) || (ii[0]===b && ii[1]===a); break;
+              case "wide":       hit = top.indexOf(ii[0]) >= 0 && top.indexOf(ii[1]) >= 0; break;
+              case "sanrenpuku": hit = ii.every(v => top.indexOf(v) >= 0); break;
+              case "sanrentan":  hit = ii[0]===a && ii[1]===b && ii[2]===c; break;
+            }
+          }
+          if(hit) sum += q;
+        }
+      }
+    return Math.min(1, sum);
   }
 
   /* ---------- 買い目 ----------
@@ -544,11 +743,14 @@
          必要オッズ = 点数 ÷ 的中確率の合計
 
      で決まる。実際のオッズがこれを下回るなら、その買い目は見送るべきである。 */
-  function buildBets(rows, budget){
+  function buildBets(rows, budget, opt){
+    opt = opt || {};
+    const pol = policyOf(opt.policy);
+    const extras = opt.extras || {};       // {sanrenpuku:true, sanrentan:true}
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
-      return {bets: [], value: null, dropped: [], grade: grade,
-              upset: rows.upset || null, spend: 0, budget: budget};
+      return {bets: [], value: null, dropped: [], grade: grade, policy: pol,
+              upset: rows.upset || null, spend: 0, budget: budget, hitChance: 0};
     }
 
     const probs = rows.map(x => x.prob);
@@ -576,48 +778,77 @@
        まったく違うので、平均だけでは「どの1点を外すべきか」が分からない。
        同額で買う場合、1点ごとの損益分岐は「その点の的中確率 × オッズ ＝ 1」
        なので、必要オッズは 1÷的中確率 になる。 */
-    const withPoints = (combos, hits, mktHits, kind) => combos.map((c, k) => ({
-      combo: c, hit: hits[k],
-      needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity,
-      ev: mktHits ? comboEv(hits[k], mktHits[k], kind) : null
-    }));
+    const withPoints = (combos, hits, mktHits, kind) => combos.map((c, k) => {
+      const ev = mktHits ? comboEv(hits[k], mktHits[k], kind) : null;
+      return {combo: c, hit: hits[k],
+              needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity, ev: ev,
+              f: ev != null ? kellyFraction(hits[k], ev) : 0};
+    });
 
     /* 荒れるレースでは推定勝率そのものが当てにならなくなる。
        単勝（1頭に賭ける）の比重を下げ、面で取る券種に回す。 */
     const up = rows.upset || upsetRisk(rows.race, rows);
-    const tanRatio = up.level === "high" ? 0.18 : up.level === "mid" ? 0.25 : 0.30;
+    const tanRatio = (up.level === "high" ? 0.18 : up.level === "mid" ? 0.25 : 0.30) * pol.tanScale;
 
-    // --- 単勝：期待値が1.0を超える馬だけ、期待値の高い順に最大2頭 ---
+    /* --- 単勝 ---
+       単勝だけは実際のオッズから期待値をそのまま計算できる（推定ではない）。
+       だから期待値1.0未満は買わない。ただし選ぶ順は期待値ではなく
+       資金の増え方にする。期待値順だと、勝ち目の薄い人気薄が上に来てしまう。 */
     const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
-                    .sort((x, y) => y.ev - x.ev).slice(0, 2);
+                    .sort((x, y) => growth(y.prob, y.ev) - growth(x.prob, x.ev))
+                    .slice(0, 2);
     tan.forEach((x, k) => {
-      push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k,
+      push({name: k === 0 ? "単勝" : "単勝（2頭目）", kind: "tan", prio: 100 - k,
             ratio: k === 0 ? tanRatio : tanRatio / 2,
             combos: [String(x.h.num)], hit: x.prob, needOdds: 1 / x.prob, evKnown: x.ev,
-            points: withPoints([String(x.h.num)], [x.prob]),
+            points: [{combo: String(x.h.num), hit: x.prob, needOdds: 1 / x.prob,
+                      ev: x.ev, f: kellyFraction(x.prob, x.ev)}],
             memo: `推定勝率 ${(x.prob*100).toFixed(1)}% × ${x.h.odds.toFixed(1)}倍 ＝ 期待値 ${x.ev.toFixed(2)}`});
     });
 
     /* --- 複勝 ---
-       ここも本命に固定しない。3着以内に入る確率が高く、かつ割の良い馬を選ぶ。
-       当たりやすくても割が悪ければ買わない（人気馬の複勝はここで落ちる）。 */
+       当たる回数を支えるのは、ここである。控除率は単勝と同じ20%で最も低く、
+       推定を通す層も1つしかない（Harville を1回だけ）。人工のレースで測ると、
+       推定上位2頭を機械的に買うだけで的中81%・回収82%になり、
+       アプリが出していた買い目全体（的中33%・回収75%）より上だった。
+
+       以前は「3着以内50%以上かつ期待値1.0以上」という条件で1頭だけ選んでいた。
+       この条件はほとんどのレースで誰も通らず、いちばん当たる券種が
+       3レースに1回しか出ていなかった。 */
     const places = placePositions(n);
     if(places){
-      const best = rows.map(x => {
+      const cands = rows.map(x => {
         const i = idx[x.h.num];
         const hit = topKProb(probs, i, places);
-        return {x: x, hit: hit, ev: comboEv(hit, topKProb(mkts, i, places), "fuku"),
-                mk: topKProb(mkts, i, places)};
-      }).filter(o => o.hit >= 0.4 && o.ev >= BUY_EV)
-        .sort((p, q) => q.ev - p.ev)[0];
-      if(best){
-        push({name: `複勝（${places}着まで）`, prio: 85, ratio: 0.12,
-              combos: [String(best.x.h.num)], hit: best.hit, needOdds: need(best.hit, 1),
-              evEst: best.ev,
-              points: withPoints([String(best.x.h.num)], [best.hit], [best.mk], "fuku"),
-              memo: `${places}着以内 ${(best.hit*100).toFixed(0)}%。` +
-                    `表示が ${need(best.hit,1).toFixed(1)}倍 以上なら買う価値があります`});
-      }
+        const mk  = topKProb(mkts, i, places);
+        return {x: x, hit: hit, mk: mk, ev: comboEv(hit, mk, "fuku")};
+      }).filter(o => o.hit >= pol.fukuMinHit);
+
+      /* 2種類の選び方を足し合わせる。
+         fukuAlways … 3着以内に入る確率が高い順。期待値は問わない。
+                      控除率のぶんは負けるが、当たる回数を支える。
+         fukuValue  … 期待値1.0以上のものだけ。資金の増え方の大きい順。
+         方針ごとにこの2つの配分を変えることで、
+         「当たる回数」と「回収率」のどこに立つかを決めている。 */
+      const takeN = [];
+      /* 期待値を問わないとはいえ、市場に買われすぎている馬まで拾うと
+         当たっても取り返せない。下限（fukuFloor）は置く。 */
+      cands.filter(o => o.ev >= pol.fukuFloor)
+           .sort((p, q) => q.hit - p.hit)
+           .slice(0, pol.fukuAlways).forEach(o => takeN.push(o));
+      cands.filter(o => o.ev >= BUY_EV && takeN.indexOf(o) < 0)
+           .sort((p, q) => growth(q.hit, q.ev) - growth(p.hit, p.ev))
+           .slice(0, pol.fukuValue).forEach(o => takeN.push(o));
+      takeN.forEach((o, k) => {
+        push({name: `複勝（${places}着まで）` + (k ? `（${k+1}頭目）` : ""),
+              underEv: o.ev < BUY_EV,
+              kind: "fuku", prio: 90 - k, ratio: (k ? 0.10 : 0.16) * pol.tanScale,
+              combos: [String(o.x.h.num)], hit: o.hit, needOdds: need(o.hit, 1),
+              evEst: o.ev,
+              points: withPoints([String(o.x.h.num)], [o.hit], [o.mk], "fuku"),
+              memo: `${places}着以内 ${(o.hit*100).toFixed(0)}%。` +
+                    `表示が ${need(o.hit,1).toFixed(1)}倍 以上なら買う価値があります`});
+      });
     }
 
     /* ============================================================
@@ -657,37 +888,51 @@
 
        そこで、まず期待値の高い順に取り、的中確率の合計が目安に届くまで
        当たりやすい順で補う。 */
-    function selectPoints(all, opt){
-      const good = all.filter(pt => pt.ev >= opt.minEv && pt.hit >= opt.minHit);
+    function selectPoints(all, o){
+      const good = all.filter(pt => pt.ev >= o.minEv && pt.hit >= o.minHit);
       const picked = [], used = {};
       let cover = 0;
-      /* 期待値順で枠を使い切ってしまうと、当たりやすい組み合わせを足す余地が
-         残らない。あらかじめ枠を分けておく。 */
-      const evSlots = Math.max(opt.min, opt.max - opt.reserve);
-      good.slice().sort((x, y) => y.ev - x.ev).forEach(pt => {
+      /* 資金の増え方の大きい順に取る。期待値順で取ると、推定を読み違えている
+         買い目から順に取ることになり、的中率も回収率も落ちる。 */
+      const evSlots = Math.max(o.min, o.max - o.reserve);
+      good.slice().sort((x, y) => y.g - x.g).forEach(pt => {
         if(picked.length >= evSlots) return;
-        if(picked.length >= opt.min && cover >= opt.cover) return;
+        if(picked.length >= o.min && cover >= o.cover) return;
         picked.push(pt); used[pt.combo] = 1; cover += pt.hit;
       });
       // 的中確率の合計が目安に届くまで、当たりやすい順で補う
       good.filter(pt => !used[pt.combo]).sort((x, y) => y.hit - x.hit).forEach(pt => {
-        if(picked.length >= opt.max || cover >= opt.cover) return;
+        if(picked.length >= o.max || cover >= o.cover) return;
         picked.push(pt); used[pt.combo] = 1; cover += pt.hit;
       });
-      picked.sort((x, y) => y.ev - x.ev);
+      /* 並べるのは賭ける金額の大きい順（＝Kelly の f 順）にする。
+         選ぶ基準は増え方（g）だが、買う人が読むのは金額の順なので、
+         表示と金額が食い違わないようにそろえる。 */
+      picked.sort((x, y) => y.f - x.f);
       return {kept: picked, cut: all.length - picked.length, cover: cover};
     }
 
-    const pt = (combo, pm, pk, kind) => ({
-      combo: combo, hit: pm, needOdds: pm > 0 ? 1 / pm : Infinity,
-      ev: comboEv(pm, pk, kind)
-    });
-    const wide = up.level === "high";              // 荒れるレースは点数を増やす
+    const pt = (combo, pm, pk, kind) => {
+      const ev = comboEv(pm, pk, kind);
+      return {combo: combo, hit: pm, needOdds: pm > 0 ? 1 / pm : Infinity,
+              ev: ev, f: kellyFraction(pm, ev), g: growth(pm, ev)};
+    };
+    // 荒れるレースは相手を広げる（ただし投入額は upset.stakeScale で絞る）
+    const spread = up.level === "high" ? 2 : up.level === "mid" ? 1 : 0;
+    const opts = (kind) => {
+      const o = pol.kinds[kind] || EXTRA_KINDS[kind];
+      if(!o) return null;
+      return Object.assign({}, o, {
+        max: o.max + spread,
+        reserve: o.reserve + (spread ? 1 : 0),
+        cover: Math.min(0.9, o.cover * (1 + 0.15 * spread))
+      });
+    };
 
-    const shape = (g, name, prio, ratio, note) => {
-      if(!g.kept.length) return;
+    const shape = (g, name, kind, prio, ratio, note) => {
+      if(!g || !g.kept.length) return;
       const hit = g.kept.reduce((s, x) => s + x.hit, 0);
-      push({name: name, prio: prio, ratio: ratio,
+      push({name: name, kind: kind, prio: prio, ratio: ratio,
             combos: g.kept.map(x => x.combo),
             hit: hit, needOdds: need(hit, g.kept.length),
             points: g.kept, cut: g.cut,
@@ -695,34 +940,32 @@
                   (g.cut ? `（割の合わない ${g.cut}通り を外しました）` : "")});
     };
 
+    const pairAll = (kind, prob) => {
+      const all = [];
+      for(let x = 0; x < cand.length; x++) for(let y = x+1; y < cand.length; y++){
+        all.push(pt(`${cand[x].h.num}-${cand[y].h.num}`,
+                    prob(probs, ci[x], ci[y]), prob(mkts, ci[x], ci[y]), kind));
+      }
+      return all;
+    };
+
+    // --- ワイド（2頭がともに3着以内）。取りこぼしを減らす主力 ---
+    if(n >= 4 && opts("wide")){
+      shape(selectPoints(pairAll("wide", wideProb), opts("wide")),
+            "ワイド", "wide", 80, opts("wide").ratio, "資金の増え方で選んだ組み合わせ");
+    }
+
     // --- 馬連（1・2着の組。順不同） ---
-    {
-      const all = [];
-      for(let x = 0; x < cand.length; x++) for(let y = x+1; y < cand.length; y++){
-        all.push(pt(`${cand[x].h.num}-${cand[y].h.num}`,
-                    quinellaProb(probs, ci[x], ci[y]),
-                    quinellaProb(mkts,  ci[x], ci[y]), "umaren"));
-      }
-      shape(selectPoints(all, {minEv: BUY_EV, minHit: 0.005, min: 2,
-                               max: wide ? 6 : 4, reserve: 2, cover: 0.12}),
-            "馬連", 80, 0.20, "期待値で選んだ組み合わせ");
+    if(opts("umaren")){
+      shape(selectPoints(pairAll("umaren", quinellaProb), opts("umaren")),
+            "馬連", "umaren", 70, opts("umaren").ratio, "資金の増え方で選んだ組み合わせ");
     }
 
-    // --- ワイド（2頭がともに3着以内）。出走4頭以上で発売 ---
-    if(n >= 4){
-      const all = [];
-      for(let x = 0; x < cand.length; x++) for(let y = x+1; y < cand.length; y++){
-        all.push(pt(`${cand[x].h.num}-${cand[y].h.num}`,
-                    wideProb(probs, ci[x], ci[y]),
-                    wideProb(mkts,  ci[x], ci[y]), "wide"));
-      }
-      shape(selectPoints(all, {minEv: BUY_EV, minHit: 0.02, min: 2,
-                               max: wide ? 4 : 3, reserve: 1, cover: 0.30}),
-            "ワイド", 70, wide ? 0.22 : 0.13, "取りこぼしを減らす");
-    }
-
-    // --- 三連複（3頭が3着以内。順不同）。堅いレースでは出さない ---
-    if(n >= 4 && up.level !== "low"){
+    /* --- 三連複（3頭が3着以内。順不同） ---
+       控除率25%。推定の誤差も大きく、人工のレースでは上位4頭BOXでも
+       的中15%・回収60%と、複勝・ワイドに両方の指標で負けた。
+       既定では出さない。明示的に指定されたときだけ、荒れるレースに限って出す。 */
+    if(n >= 4 && extras.sanrenpuku && up.level !== "low"){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = x+1; y < cand.length; y++)
@@ -731,16 +974,14 @@
                         trioProb(probs, ci[x], ci[y], ci[z]),
                         trioProb(mkts,  ci[x], ci[y], ci[z]), "sanrenpuku"));
           }
-      shape(selectPoints(all, {minEv: BUY_EV, minHit: 0.003, min: 2,
-                               max: wide ? 8 : 6, reserve: 3, cover: 0.10}),
-            "三連複", 60, wide ? 0.28 : 0.20, "期待値で選んだ組み合わせ");
+      shape(selectPoints(all, opts("sanrenpuku")),
+            "三連複", "sanrenpuku", 40, opts("sanrenpuku").ratio, "資金の増え方で選んだ組み合わせ");
     }
 
     /* --- 三連単（着順まで当てる） ---
-       当たりにくい代わりにオッズが大きく、人気の並びが買われすぎる
-       （＝人気薄が絡む並びは割がよい）券種でもある。
-       推定の誤差はいちばん大きいので、下限を高くし点数も絞る。 */
-    if(n >= 4){
+       控除率27.5%と最も高く、推定は Harville の仮定にいちばん強く依存する。
+       人工のレースでは上位3頭BOXで的中6%・回収44%。既定では出さない。 */
+    if(n >= 4 && extras.sanrentan){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = 0; y < cand.length; y++)
@@ -750,10 +991,9 @@
                         orderProb(probs, ci[x], ci[y], ci[z]),
                         orderProb(mkts,  ci[x], ci[y], ci[z]), "sanrentan"));
           }
-      const g = selectPoints(all, {minEv: SANRENTAN_EV, minHit: 0.0005, min: 3,
-                                   max: SANRENTAN_MAX, reserve: 4, cover: 0.03});
-      shape(g, "三連単", 30, wide ? 0.22 : 0.14,
-            g.kept.length ? `推定期待値の高い並び（最良 ${g.kept[0].combo} で ${g.kept[0].ev.toFixed(2)}）` : "");
+      const g = selectPoints(all, opts("sanrentan"));
+      shape(g, "三連単", "sanrentan", 20, opts("sanrentan").ratio,
+            g.kept.length ? `資金の増え方で選んだ並び（最良 ${g.kept[0].combo} で推定期待値 ${g.kept[0].ev.toFixed(2)}）` : "");
     }
 
     /* 券種としての推定期待値。同額で買うので、1点ごとの期待値の平均になる。 */
@@ -771,14 +1011,28 @@
 
     // 1点100円が最低単位のため、点数が多いと予算を超えることがある。
     // 収まるまで優先度の低い券種から落とす。
+    /* 1点ごとの金額。同額で並べるのではなく、資金がいちばん速く増える割合
+       （Kelly の f）に比例させる。同じ予算でも、当たりやすく割の良い点に
+       厚く乗るので、当たったときの取り返しが大きくなる。 */
     let live = bets.slice();
     const dropped = [];
     for(;;){
       const ratioSum = live.reduce((s, x) => s + x.ratio, 0);
       live.forEach(x => {
         const share = spend * (x.ratio / ratioSum);
-        x.unit = unitAmount(share, x.combos.length);
-        x.total = x.unit * x.combos.length;
+        const pts = x.points || [];
+        const fs = pts.length === x.combos.length
+          ? pts.map(p => (p && p.f > 0) ? p.f : 0) : [];
+        const fSum = fs.reduce((a, b) => a + b, 0);
+        if(fSum > 0){
+          x.units = fs.map(f => Math.max(100, Math.round(share * (f / fSum) / 100) * 100));
+        } else {
+          const u = unitAmount(share, x.combos.length);
+          x.units = x.combos.map(() => u);
+        }
+        x.unit = Math.min.apply(null, x.units);          // 表示用の最小単位
+        x.total = x.units.reduce((a, b) => a + b, 0);
+        (x.points || []).forEach((p, k) => { p.yen = x.units[k]; });
       });
       const used = live.reduce((s, x) => s + x.total, 0);
       if(used <= spend || live.length <= 1) break;
@@ -787,8 +1041,8 @@
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
-    return {bets: live, value, dropped, grade: grade, upset: up,
-            spend: spend, budget: budget};
+    return {bets: live, value, dropped, grade: grade, upset: up, policy: pol,
+            spend: spend, budget: budget, hitChance: hitChance(live, rows)};
   }
 
   /* ---------- 妙味・過剰人気の判定 ----------
@@ -857,9 +1111,12 @@
     TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS, NANKAN_KEYS, CHIHO_KEYS,
     STYLES, STYLE_LABEL, PACE_BONUS, MARKS, MARK_NAME,
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
+    PART_KEYS, PART_LABEL, BLEND_BASE, scoreOf, blendProbs,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
-    breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT,
+    breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
+    kellyFraction, growth, hitChance,
+    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,

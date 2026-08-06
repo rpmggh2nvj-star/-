@@ -387,6 +387,62 @@ label.chk input{width:16px;height:16px;accent-color:var(--red);}
 .pt-table td{padding:2px 6px;border-top:1px solid var(--line);}
 .pt-table td.need{font-weight:700;color:var(--ink);text-align:right;}
 .pt-table th:last-child{text-align:right;}
+.pt-table td.yen{text-align:right;color:var(--ink);font-weight:700;}
+
+/* 買い方の説明・想定的中率 */
+.policy-note{color:var(--ink);}
+label.inline{display:inline-flex;align-items:center;gap:5px;margin-right:14px;
+  font-weight:700;white-space:nowrap;flex:0 0 auto;}
+label.inline input{margin:0;}
+.warn-mini{color:var(--ink-soft);}
+.hitchance{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--turf);background:var(--turf-tint);
+  border-radius:12px;padding:9px 13px;margin-bottom:10px;
+}
+.hitchance .hc-k{font-size:.76rem;font-weight:800;color:var(--turf);letter-spacing:.03em;}
+.hitchance .hc-v{font-size:1.25rem;font-weight:800;color:var(--turf);
+  font-variant-numeric:tabular-nums;}
+.hitchance .hc-p{margin-left:auto;font-size:.72rem;color:var(--ink-soft);font-weight:700;}
+.hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
+.odds-need .v.ev-ng{color:var(--red);}
+
+/* ---------- 記録から学ぶ ---------- */
+.learn-state{
+  border-radius:11px;padding:10px 13px;font-size:.86rem;font-weight:800;
+  border:1px solid var(--line);background:var(--field);
+}
+.learn-state.s-on{border-color:var(--turf);background:var(--turf-tint);color:var(--turf);}
+.learn-weights{margin:10px 0 0;padding-left:1.1em;font-size:.78rem;line-height:1.75;}
+.learn-weights li{margin-bottom:2px;}
+.learn-vs{
+  margin-top:12px;border:1px solid var(--line);border-radius:11px;
+  padding:10px 13px;background:var(--field);
+}
+.learn-vs .vs-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:.8rem;font-weight:700;}
+.learn-vs .vs-row b{font-size:1.05rem;font-variant-numeric:tabular-nums;}
+.learn-vs .vs-vs{color:var(--ink-soft);}
+.learn-vs .vs-note{margin-top:6px;font-size:.74rem;line-height:1.6;}
+.learn-vs .vs-note.good{color:var(--turf);}
+.learn-vs .vs-note.bad{color:var(--ink-soft);}
+.cal-table{border-collapse:collapse;width:100%;font-size:.74rem;margin-top:12px;}
+.cal-table th{color:var(--ink-soft);font-weight:700;text-align:right;padding:4px 6px 2px;}
+.cal-table th:first-child{text-align:left;}
+.cal-table td{padding:3px 6px;border-top:1px solid var(--line);text-align:right;}
+.cal-table td:first-child{text-align:left;}
+.cal-table td.cal-over{color:var(--red);font-weight:700;}
+.cal-table td.cal-under{color:var(--turf);font-weight:700;}
+.review{
+  margin-top:10px;border-radius:10px;padding:9px 12px;
+  background:var(--gold-tint);border:1px solid var(--gold-line);
+}
+.review .rv-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:4px;}
+.review .rv-line{font-size:.78rem;line-height:1.7;}
+.under-ev{
+  font-size:.72rem;line-height:1.6;color:var(--red);
+  background:var(--red-tint);border:1px solid var(--red-line);
+  border-radius:9px;padding:7px 9px;
+}
 
 /* ---------- Bets ---------- */
 .bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
@@ -677,7 +733,20 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
+      <label class="field">買い方
+        <select id="policy">
+          <option value="value">回収率重視</option>
+          <option value="balance" selected>バランス</option>
+          <option value="hit">的中率重視</option>
+        </select>
+      </label>
     </div>
+    <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
+    <p class="hint" style="margin:6px 0 0">
+      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
+      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
+      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
+    </p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
@@ -820,6 +889,32 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
     </p>
   </section>
 
+  <!-- 記録から学ぶ -->
+  <section class="panel" id="learnPanel">
+    <div class="panel-head">
+      <h2>記録から学ぶ</h2>
+      <span class="hint" id="learnCount"></span>
+    </div>
+    <div class="learn-state s-off" id="learnState"></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline"><input type="checkbox" id="useTune" checked> 学習した見方を使う</label>
+    </p>
+    <p class="hint" id="learnNote" style="margin:8px 0 0"></p>
+    <ul class="learn-weights" id="learnWeights" hidden></ul>
+    <div class="learn-vs" id="learnVs" hidden></div>
+    <table class="cal-table" id="learnCal" hidden></table>
+    <div class="btn-row" style="margin-top:12px">
+      <button type="button" class="ghost" id="btnLearn">いま学習する</button>
+      <button type="button" class="ghost" id="btnLearnReset">学習を消す</button>
+    </div>
+    <p class="hint" style="margin:12px 0 0">
+      着順を入れるたびに、記録から「どの項目をどれだけ重く見るべきか」を当てはめ直します。
+      当てはめに使っていないレースで検算し、当てられ方が良くなったときだけ採用します。
+      良くならなければ既定の見方のままなので、学習で成績が落ちることはありません。
+      過去の予想は書き換えません（記録は当時のまま残ります）。
+    </p>
+  </section>
+
   <button type="button" class="big-run" id="btnRun">この条件で予想する</button>
 
   <!-- 結果 -->
@@ -836,6 +931,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
     </p>
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
+    <div class="hitchance" id="hitChance" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 
@@ -1050,9 +1146,76 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   }
 
   /* ============================================================
+     学習した重み
+     ------------------------------------------------------------
+     記録した着順から、どの項目をどれだけ重く見るべきかを学ぶ。
+     learn.js が求めた倍率をここで受け取る。既定はすべて 1.0 で、
+     何も学習していない状態＝これまでと同じ計算になる。
+
+     重みの当てはめ（learn.js）は、この関数と同じ計算を使わなければ
+     意味がない。そのため softmax とブレンドを scoreOf / blendProbs に
+     切り出し、予想と学習の両方が同じ道を通るようにしてある。
+     ============================================================ */
+  const PART_KEYS = ["form","jockey","training","dist","baba","pace","kinryo","weight","waku"];
+  const PART_LABEL = {
+    form:"近走", jockey:"騎手", training:"調教", dist:"距離適性", baba:"馬場適性",
+    pace:"展開（脚質）", kinryo:"斤量", weight:"馬体重増減", waku:"枠順"
+  };
+  const BLEND_BASE = 0.45;        // W = 1 − BLEND_BASE × 情報量
+
+  function multOf(tune, k){
+    const m = tune && tune.weights;
+    const v = m ? m[k] : null;
+    return (typeof v === "number" && isFinite(v) && v > 0) ? v : 1;
+  }
+  function scoreOf(parts, tune){
+    let s = 0;
+    for(let i = 0; i < PART_KEYS.length; i++){
+      const k = PART_KEYS[i];
+      if(parts[k] != null) s += parts[k] * multOf(tune, k);
+    }
+    return s;
+  }
+
+  const stdOf = arr => {
+    const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
+    return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
+  };
+
+  /* 指数 → モデル勝率（softmax）→ 市場とのブレンド。
+     予想（analyze）と学習（learn.js の当てはめ）が同じ結果になるよう、
+     ここだけを通す。 */
+  function blendProbs(scores, markets, info, tune){
+    /* 温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
+       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
+       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
+       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
+       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
+    const marketSpread = Math.max(0.6, stdOf(markets.map(v => Math.log(Math.max(1e-9, v)))));
+    const T = Math.min(14, Math.max(4, stdOf(scores) / marketSpread));
+    const maxScore = Math.max.apply(null, scores);
+    const exps = scores.map(v => Math.exp((v - maxScore) / T));
+    const expSum = exps.reduce((a,b)=>a+b, 0);
+    const model = exps.map(v => v / expSum);
+
+    /* モデル勝率 × 市場勝率 の幾何ブレンド。
+       オッズは極めて強い予測子なので、単独モデルを市場で補正して過信を防ぐ。
+       市場の重みは入力の情報量で決まる。判断材料がなければ市場そのもの（W=1）に
+       収束し、根拠のない「妙味」を出さない。
+       BLEND_BASE は「材料が揃ったとき、どこまで自分の見立てに寄せるか」で、
+       記録が貯まれば learn.js がこの値も学習し直す。 */
+    const base = (tune && typeof tune.blend === "number" && isFinite(tune.blend))
+      ? Math.min(0.9, Math.max(0, tune.blend)) : BLEND_BASE;
+    const W = 1 - base * info;
+    const bl = model.map((m, i) => Math.pow(markets[i], W) * Math.pow(m, 1 - W));
+    const blSum = bl.reduce((a,b)=>a+b, 0);
+    return {model: model, prob: bl.map(v => v / blSum), T: T, W: W};
+  }
+
+  /* ============================================================
      本体：能力指数 → 推定勝率
      ============================================================ */
-  function analyze(r, hs){
+  function analyze(r, hs, tune){
     /* 出走取消・除外の馬は走らない。オッズも付かないため、
        残したままだと市場推定勝率の分母が狂い、枠順の有利不利もずれる。 */
     hs = hs.filter(h => !h.scratched);
@@ -1097,48 +1260,24 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       // 7) 枠順
       parts.waku = wakuBonus(r, h, n);
 
-      const score = Object.keys(parts).reduce((a,k)=>a+parts[k], 0);
-      return {h, parts, score, market: impl[i] / implSum};
+      return {h, parts, score: scoreOf(parts, tune), market: impl[i] / implSum};
     });
 
-    /* 能力指数 → モデル勝率（softmax）
-
-       温度Tは固定せず、指数の広がりが市場の広がりと釣り合うように決める。
-       Tを大きめに固定するとモデルの勝率が中央に潰れ、「勝ち目のない馬」を
-       表現できなくなる。すると市場とのブレンドで極端な人気薄が機械的に
-       持ち上がり、300倍の馬に「妙味」が付くといった誤りが出る。
-       市場が横一線のときにモデルまで潰れないよう、市場側の広がりには下限を置く。 */
-    const std = arr => {
-      const m = arr.reduce((a,b)=>a+b, 0) / arr.length;
-      return Math.sqrt(arr.reduce((a,b)=>a + (b-m)*(b-m), 0) / arr.length);
-    };
-    const marketSpread = Math.max(0.6, std(rows.map(x => Math.log(x.market))));
-    const scoreSpread = std(rows.map(x => x.score));
-    const T = Math.min(14, Math.max(4, scoreSpread / marketSpread));
-    const maxScore = Math.max.apply(null, rows.map(x => x.score));
-    const exps = rows.map(x => Math.exp((x.score - maxScore) / T));
-    const expSum = exps.reduce((a,b)=>a+b, 0);
-    rows.forEach((x, i) => { x.model = exps[i] / expSum; });
-
-    // モデル勝率 × 市場勝率 の幾何ブレンド
-    // オッズは極めて強い予測子なので、単独モデルを市場で補正して過信を防ぐ。
-    // 市場の重みは入力の情報量で決まる。判断材料がなければ市場そのもの（W=1）に
-    // 収束し、根拠のない「妙味」を出さない。
     const info = infoLevelOf(hs);
-    const W = 1 - 0.45 * info;                       // 情報量1.0 → 0.55 / 0 → 1.00
-    const bl = rows.map(x => Math.pow(x.market, W) * Math.pow(x.model, 1 - W));
-    const blSum = bl.reduce((a,b)=>a+b, 0);
+    const b = blendProbs(rows.map(x => x.score), rows.map(x => x.market), info, tune);
     rows.forEach((x, i) => {
-      x.prob = bl[i] / blSum;
-      x.ev   = x.prob * x.h.odds;      // 単勝の期待回収率
-      x.edge = x.prob / x.market;      // 市場評価との乖離（1.00＝市場並み）
+      x.model = b.model[i];
+      x.prob  = b.prob[i];
+      x.ev    = x.prob * x.h.odds;      // 単勝の期待回収率
+      x.edge  = x.prob / x.market;      // 市場評価との乖離（1.00＝市場並み）
     });
 
     rows.sort((a,b) => b.prob - a.prob);
     rows.forEach((x, i) => { x.rank = i + 1; });
     rows.infoLevel = info;
-    rows.temperature = T;
-    rows.marketWeight = W;
+    rows.temperature = b.T;
+    rows.marketWeight = b.W;
+    rows.tune = tune || null;
     rows.race = r;
     rows.upset = upsetRisk(r, rows);
     return rows;
@@ -1213,9 +1352,11 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     if(level === "high"){
       return [
         "軸を1頭に決め打ちせず、相手を5頭まで広げます。",
-        "単勝の比重を下げ、ワイド・三連複で面を取ります（1点あたりを薄く、点数を多く）。",
+        "単勝の比重を下げ、複勝・ワイドで面を取ります（1点あたりを薄く、点数を多く）。",
         "推定勝率そのものが当てにならなくなる局面なので、投入額を3割減らします。",
-        "人気馬の単勝で取り返そうとしないでください。荒れるレースほど人気馬の期待値は下がります。"
+        "人気馬の単勝で取り返そうとしないでください。荒れるレースほど人気馬の期待値は下がります。",
+        "当たる回数を増やしたいなら、三連単に手を伸ばすのではなく買い方を「的中率重視」にしてください。" +
+        "荒れるレースほど三連単の推定は外れます。"
       ];
     }
     if(level === "mid"){
@@ -1227,8 +1368,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     }
     return [
       "相手は2頭に絞ります。広げても必要オッズが上がるだけで割に合いません。",
-      "単勝・馬連を中心に、点数を絞って厚く買います。",
-      "三連複は出しません（点数のわりに必要オッズが高くなります）。"
+      "単勝・複勝を中心に、点数を絞って厚く買います。",
+      "点数を増やしても当たる回数は増えますが、増えるぶん以上に必要オッズが上がります。"
     ];
   }
 
@@ -1331,13 +1472,13 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
      二分法で探す。近似式を置かず本体の計算をそのまま使うため、
      表示している推定勝率と必ず整合する。
      ============================================================ */
-  function breakEvenOdds(r, hs, num){
+  function breakEvenOdds(r, hs, num, tune){
     const live = hs.filter(h => !h.scratched);
     if(!live.some(h => h.num === num)) return null;
 
     const evAt = o => {
       const copy = live.map(h => h.num === num ? Object.assign({}, h, {odds: o}) : h);
-      const x = analyze(r, copy).find(y => y.h.num === num);
+      const x = analyze(r, copy, tune).find(y => y.h.num === num);
       return x ? x.ev : 0;
     };
 
@@ -1357,8 +1498,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   }
 
   // 全馬ぶんまとめて求め、rows に minOdds として持たせる
-  function fillBreakEven(r, hs, rows){
-    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num); });
+  function fillBreakEven(r, hs, rows, tune){
+    rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num, tune); });
     return rows;
   }
 
@@ -1440,9 +1581,163 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     sanrenpuku: 0.25, sanrentan: 0.275
   };
 
+  /* 推定した比を、そのままの重さでは信じない（＝勝者の呪いへの備え）
+     ------------------------------------------------------------
+     人工のレースを大量に作って測ったところ、推定期待値の帯ごとの
+     「真の期待値」と「真の的中確率」はこうなっていた（馬連の例）。
+
+       推定EV 1.05 → 真のEV 0.70 ／ 真の的中 2.69%
+       推定EV 1.35 → 真のEV 0.75 ／ 真の的中 2.17%
+       推定EV 2.26 → 真のEV 0.85 ／ 真の的中 1.21%
+
+     推定期待値が上がっても真の期待値はほとんど上がらず、
+     真の的中確率はむしろ下がっていく。つまり「推定期待値が高い買い目」は
+     多くの場合「モデルが的中確率を読み違えている買い目」でしかない。
+     期待値の高い順に取ると、読み違いの大きい順に取ってしまう。
+
+     そこで比を λ 乗して縮める。λ は券種ごとの推定の確かさで決める。
+     単勝はオッズが実測値なので縮めない（比ではなく実際の期待値である）。
+     着順まで当てる券種ほど Harville の仮定に強く依存するので、強く縮める。 */
+  const RELIABILITY = {
+    tan: 1.00, fuku: 0.80,
+    umaren: 0.62, wide: 0.62,
+    sanrenpuku: 0.52, sanrentan: 0.38
+  };
+
   function comboEv(pModel, pMarket, kind){
-    if(!(pMarket > 0)) return 0;
-    return (pModel / pMarket) * (1 - (TAKEOUT[kind] != null ? TAKEOUT[kind] : 0.25));
+    if(!(pMarket > 0) || !(pModel > 0)) return 0;
+    const take = TAKEOUT[kind] != null ? TAKEOUT[kind] : 0.25;
+    const lam = RELIABILITY[kind] != null ? RELIABILITY[kind] : 0.5;
+    return Math.pow(pModel / pMarket, lam) * (1 - take);
+  }
+
+  /* ---------- 資金の増え方（Kelly） ----------
+     期待値がいちばん高い1点に集中するのは、モデルが正しいときだけ正しい。
+     実際には推定に誤差があるので、資金がいちばん速く増える買い方を選ぶ。
+
+     的中確率 p、払戻オッズ O の1点に資金の割合 f を賭けるとき、
+     最適な f と、そのときの資金の増え方は次のようになる。
+
+       f* = (期待値 − 1) ÷ (期待値 × O) = p(EV−1)/EV²
+       増え方 ∝ p × (EV−1)² ÷ EV²
+
+     この「増え方」で並べると、当たりにくい大穴は自動的に後ろへ下がる。
+       的中 10.7% ・期待値 1.53 → 0.0128
+       的中  2.1% ・期待値 3.67 → 0.0111
+     期待値では後者が3倍上だが、資金の増え方では前者が上に来る。 */
+  function kellyFraction(hit, ev){
+    if(!(hit > 0) || !(ev > 1)) return 0;
+    return hit * (ev - 1) / (ev * ev);
+  }
+  function growth(hit, ev){
+    if(!(hit > 0) || !(ev > 1)) return 0;
+    return hit * (ev - 1) * (ev - 1) / (ev * ev);
+  }
+
+  /* ============================================================
+     買い方の方針
+     ------------------------------------------------------------
+     「当たる回数」と「回収率」は、ある所から先は交換関係にある。
+     どちらを優先するかは道具が勝手に決めてよい話ではないので、
+     方針として選べるようにした。人工のレースで測った目安は次のとおり。
+
+       複勝を推定上位3頭に機械的に  … 的中 90% ／ 回収 82%
+       複勝を推定上位2頭に機械的に  … 的中 81% ／ 回収 82%
+       複勝を期待値1.0超だけ（2頭） … 的中 34% ／ 回収 89%
+       単勝を期待値1位1頭だけ        … 的中  8% ／ 回収 96%
+       三連複を上位4頭BOX            … 的中 15% ／ 回収 60%
+       三連単を上位3頭BOX            … 的中  6% ／ 回収 44%
+
+     三連複・三連単は、的中率でも回収率でも複勝・ワイドに負けている。
+     控除率が高いうえ、推定の誤差がいちばん大きいためで、
+     どちらの方針でも既定では買わない（必要なら明示的に足す）。 */
+  const POLICIES = {
+    value: {
+      key:"value", label:"回収率重視",
+      lead:"推定の確かなものだけを、少ない点数で買います。当たる回数は減ります。",
+      tanScale: 1.3, fukuAlways: 0, fukuValue: 2, fukuMinHit: 0.25, fukuFloor: 1.00,
+      kinds: {
+        wide:   {minEv:1.06, minHit:0.04,  min:2, max:3, reserve:1, cover:0.45, ratio:0.20},
+        umaren: {minEv:1.12, minHit:0.010, min:2, max:3, reserve:1, cover:0.20, ratio:0.12}
+      }
+    },
+    balance: {
+      key:"balance", label:"バランス",
+      lead:"当たる回数と回収率のつり合いを取ります。既定の買い方です。",
+      tanScale: 1.0, fukuAlways: 1, fukuValue: 1, fukuMinHit: 0.25, fukuFloor: 0.82,
+      kinds: {
+        wide:   {minEv:1.02, minHit:0.04,  min:2, max:4, reserve:2, cover:0.55, ratio:0.22},
+        umaren: {minEv:1.10, minHit:0.010, min:2, max:4, reserve:2, cover:0.25, ratio:0.12}
+      }
+    },
+    hit: {
+      key:"hit", label:"的中率重視",
+      lead:"当たる回数を増やす買い方です。期待値が 1.0 に届かない複勝も買うので、" +
+           "長い目で見た回収率はその分下がります。",
+      tanScale: 0.8, fukuAlways: 3, fukuValue: 0, fukuMinHit: 0.28, fukuFloor: 0.75,
+      kinds: {
+        wide:   {minEv:0.95, minHit:0.05,  min:3, max:5, reserve:3, cover:0.70, ratio:0.26},
+        umaren: {minEv:1.05, minHit:0.012, min:2, max:4, reserve:3, cover:0.30, ratio:0.12}
+      }
+    }
+  };
+  const POLICY_KEYS = ["value", "balance", "hit"];
+  const POLICY_DEFAULT = "balance";
+  function policyOf(key){ return POLICIES[key] || POLICIES[POLICY_DEFAULT]; }
+
+  /* 明示的に足したときだけ使う券種。既定では出さない。 */
+  const EXTRA_KINDS = {
+    sanrenpuku: {minEv:1.20, minHit:0.004,  min:2, max:6, reserve:3, cover:0.18, ratio:0.14},
+    sanrentan:  {minEv:1.45, minHit:0.0008, min:3, max:8, reserve:4, cover:0.05, ratio:0.12}
+  };
+
+  /* ---------- このレースで「何か1点でも当たる」確率 ----------
+     券種をまたぐと的中は重なる（複勝が当たるときはワイドも当たりやすい）。
+     足し算では出せないので、1〜3着の並びを全通り数え上げて、
+     買った点のどれかが当たる並びの確率を合計する。Harville の下では厳密。 */
+  function hitChance(bets, rows){
+    const n = rows.length;
+    if(!bets || !bets.length || n < 3) return 0;
+    const p = rows.map(x => x.prob);
+    const idx = {};
+    rows.forEach((x, i) => { idx[x.h.num] = i; });
+    const places = placePositions(n);
+
+    const pts = [];
+    bets.forEach(b => {
+      (b.combos || []).forEach(c => {
+        const ii = String(c).split("-").map(s => idx[parseInt(s, 10)]);
+        if(ii.some(v => v == null)) return;
+        pts.push({kind: b.kind, ii: ii});
+      });
+    });
+    if(!pts.length) return 0;
+
+    let sum = 0;
+    for(let a = 0; a < n; a++)
+      for(let b = 0; b < n; b++){
+        if(b === a) continue;
+        for(let c = 0; c < n; c++){
+          if(c === a || c === b) continue;
+          const q = orderProb(p, a, b, c);
+          if(!(q > 0)) continue;
+          const top = [a, b, c];
+          let hit = false;
+          for(let k = 0; k < pts.length && !hit; k++){
+            const ii = pts[k].ii;
+            switch(pts[k].kind){
+              case "tan":        hit = ii[0] === a; break;
+              case "fuku":       hit = top.slice(0, places).indexOf(ii[0]) >= 0; break;
+              case "umaren":     hit = (ii[0]===a && ii[1]===b) || (ii[0]===b && ii[1]===a); break;
+              case "wide":       hit = top.indexOf(ii[0]) >= 0 && top.indexOf(ii[1]) >= 0; break;
+              case "sanrenpuku": hit = ii.every(v => top.indexOf(v) >= 0); break;
+              case "sanrentan":  hit = ii[0]===a && ii[1]===b && ii[2]===c; break;
+            }
+          }
+          if(hit) sum += q;
+        }
+      }
+    return Math.min(1, sum);
   }
 
   /* ---------- 買い目 ----------
@@ -1458,11 +1753,14 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
          必要オッズ = 点数 ÷ 的中確率の合計
 
      で決まる。実際のオッズがこれを下回るなら、その買い目は見送るべきである。 */
-  function buildBets(rows, budget){
+  function buildBets(rows, budget, opt){
+    opt = opt || {};
+    const pol = policyOf(opt.policy);
+    const extras = opt.extras || {};       // {sanrenpuku:true, sanrentan:true}
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
-      return {bets: [], value: null, dropped: [], grade: grade,
-              upset: rows.upset || null, spend: 0, budget: budget};
+      return {bets: [], value: null, dropped: [], grade: grade, policy: pol,
+              upset: rows.upset || null, spend: 0, budget: budget, hitChance: 0};
     }
 
     const probs = rows.map(x => x.prob);
@@ -1490,48 +1788,77 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        まったく違うので、平均だけでは「どの1点を外すべきか」が分からない。
        同額で買う場合、1点ごとの損益分岐は「その点の的中確率 × オッズ ＝ 1」
        なので、必要オッズは 1÷的中確率 になる。 */
-    const withPoints = (combos, hits, mktHits, kind) => combos.map((c, k) => ({
-      combo: c, hit: hits[k],
-      needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity,
-      ev: mktHits ? comboEv(hits[k], mktHits[k], kind) : null
-    }));
+    const withPoints = (combos, hits, mktHits, kind) => combos.map((c, k) => {
+      const ev = mktHits ? comboEv(hits[k], mktHits[k], kind) : null;
+      return {combo: c, hit: hits[k],
+              needOdds: hits[k] > 0 ? 1 / hits[k] : Infinity, ev: ev,
+              f: ev != null ? kellyFraction(hits[k], ev) : 0};
+    });
 
     /* 荒れるレースでは推定勝率そのものが当てにならなくなる。
        単勝（1頭に賭ける）の比重を下げ、面で取る券種に回す。 */
     const up = rows.upset || upsetRisk(rows.race, rows);
-    const tanRatio = up.level === "high" ? 0.18 : up.level === "mid" ? 0.25 : 0.30;
+    const tanRatio = (up.level === "high" ? 0.18 : up.level === "mid" ? 0.25 : 0.30) * pol.tanScale;
 
-    // --- 単勝：期待値が1.0を超える馬だけ、期待値の高い順に最大2頭 ---
+    /* --- 単勝 ---
+       単勝だけは実際のオッズから期待値をそのまま計算できる（推定ではない）。
+       だから期待値1.0未満は買わない。ただし選ぶ順は期待値ではなく
+       資金の増え方にする。期待値順だと、勝ち目の薄い人気薄が上に来てしまう。 */
     const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
-                    .sort((x, y) => y.ev - x.ev).slice(0, 2);
+                    .sort((x, y) => growth(y.prob, y.ev) - growth(x.prob, x.ev))
+                    .slice(0, 2);
     tan.forEach((x, k) => {
-      push({name: k === 0 ? "単勝" : "単勝（2頭目）", prio: 100 - k,
+      push({name: k === 0 ? "単勝" : "単勝（2頭目）", kind: "tan", prio: 100 - k,
             ratio: k === 0 ? tanRatio : tanRatio / 2,
             combos: [String(x.h.num)], hit: x.prob, needOdds: 1 / x.prob, evKnown: x.ev,
-            points: withPoints([String(x.h.num)], [x.prob]),
+            points: [{combo: String(x.h.num), hit: x.prob, needOdds: 1 / x.prob,
+                      ev: x.ev, f: kellyFraction(x.prob, x.ev)}],
             memo: `推定勝率 ${(x.prob*100).toFixed(1)}% × ${x.h.odds.toFixed(1)}倍 ＝ 期待値 ${x.ev.toFixed(2)}`});
     });
 
     /* --- 複勝 ---
-       ここも本命に固定しない。3着以内に入る確率が高く、かつ割の良い馬を選ぶ。
-       当たりやすくても割が悪ければ買わない（人気馬の複勝はここで落ちる）。 */
+       当たる回数を支えるのは、ここである。控除率は単勝と同じ20%で最も低く、
+       推定を通す層も1つしかない（Harville を1回だけ）。人工のレースで測ると、
+       推定上位2頭を機械的に買うだけで的中81%・回収82%になり、
+       アプリが出していた買い目全体（的中33%・回収75%）より上だった。
+
+       以前は「3着以内50%以上かつ期待値1.0以上」という条件で1頭だけ選んでいた。
+       この条件はほとんどのレースで誰も通らず、いちばん当たる券種が
+       3レースに1回しか出ていなかった。 */
     const places = placePositions(n);
     if(places){
-      const best = rows.map(x => {
+      const cands = rows.map(x => {
         const i = idx[x.h.num];
         const hit = topKProb(probs, i, places);
-        return {x: x, hit: hit, ev: comboEv(hit, topKProb(mkts, i, places), "fuku"),
-                mk: topKProb(mkts, i, places)};
-      }).filter(o => o.hit >= 0.4 && o.ev >= BUY_EV)
-        .sort((p, q) => q.ev - p.ev)[0];
-      if(best){
-        push({name: `複勝（${places}着まで）`, prio: 85, ratio: 0.12,
-              combos: [String(best.x.h.num)], hit: best.hit, needOdds: need(best.hit, 1),
-              evEst: best.ev,
-              points: withPoints([String(best.x.h.num)], [best.hit], [best.mk], "fuku"),
-              memo: `${places}着以内 ${(best.hit*100).toFixed(0)}%。` +
-                    `表示が ${need(best.hit,1).toFixed(1)}倍 以上なら買う価値があります`});
-      }
+        const mk  = topKProb(mkts, i, places);
+        return {x: x, hit: hit, mk: mk, ev: comboEv(hit, mk, "fuku")};
+      }).filter(o => o.hit >= pol.fukuMinHit);
+
+      /* 2種類の選び方を足し合わせる。
+         fukuAlways … 3着以内に入る確率が高い順。期待値は問わない。
+                      控除率のぶんは負けるが、当たる回数を支える。
+         fukuValue  … 期待値1.0以上のものだけ。資金の増え方の大きい順。
+         方針ごとにこの2つの配分を変えることで、
+         「当たる回数」と「回収率」のどこに立つかを決めている。 */
+      const takeN = [];
+      /* 期待値を問わないとはいえ、市場に買われすぎている馬まで拾うと
+         当たっても取り返せない。下限（fukuFloor）は置く。 */
+      cands.filter(o => o.ev >= pol.fukuFloor)
+           .sort((p, q) => q.hit - p.hit)
+           .slice(0, pol.fukuAlways).forEach(o => takeN.push(o));
+      cands.filter(o => o.ev >= BUY_EV && takeN.indexOf(o) < 0)
+           .sort((p, q) => growth(q.hit, q.ev) - growth(p.hit, p.ev))
+           .slice(0, pol.fukuValue).forEach(o => takeN.push(o));
+      takeN.forEach((o, k) => {
+        push({name: `複勝（${places}着まで）` + (k ? `（${k+1}頭目）` : ""),
+              underEv: o.ev < BUY_EV,
+              kind: "fuku", prio: 90 - k, ratio: (k ? 0.10 : 0.16) * pol.tanScale,
+              combos: [String(o.x.h.num)], hit: o.hit, needOdds: need(o.hit, 1),
+              evEst: o.ev,
+              points: withPoints([String(o.x.h.num)], [o.hit], [o.mk], "fuku"),
+              memo: `${places}着以内 ${(o.hit*100).toFixed(0)}%。` +
+                    `表示が ${need(o.hit,1).toFixed(1)}倍 以上なら買う価値があります`});
+      });
     }
 
     /* ============================================================
@@ -1571,37 +1898,51 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
 
        そこで、まず期待値の高い順に取り、的中確率の合計が目安に届くまで
        当たりやすい順で補う。 */
-    function selectPoints(all, opt){
-      const good = all.filter(pt => pt.ev >= opt.minEv && pt.hit >= opt.minHit);
+    function selectPoints(all, o){
+      const good = all.filter(pt => pt.ev >= o.minEv && pt.hit >= o.minHit);
       const picked = [], used = {};
       let cover = 0;
-      /* 期待値順で枠を使い切ってしまうと、当たりやすい組み合わせを足す余地が
-         残らない。あらかじめ枠を分けておく。 */
-      const evSlots = Math.max(opt.min, opt.max - opt.reserve);
-      good.slice().sort((x, y) => y.ev - x.ev).forEach(pt => {
+      /* 資金の増え方の大きい順に取る。期待値順で取ると、推定を読み違えている
+         買い目から順に取ることになり、的中率も回収率も落ちる。 */
+      const evSlots = Math.max(o.min, o.max - o.reserve);
+      good.slice().sort((x, y) => y.g - x.g).forEach(pt => {
         if(picked.length >= evSlots) return;
-        if(picked.length >= opt.min && cover >= opt.cover) return;
+        if(picked.length >= o.min && cover >= o.cover) return;
         picked.push(pt); used[pt.combo] = 1; cover += pt.hit;
       });
       // 的中確率の合計が目安に届くまで、当たりやすい順で補う
       good.filter(pt => !used[pt.combo]).sort((x, y) => y.hit - x.hit).forEach(pt => {
-        if(picked.length >= opt.max || cover >= opt.cover) return;
+        if(picked.length >= o.max || cover >= o.cover) return;
         picked.push(pt); used[pt.combo] = 1; cover += pt.hit;
       });
-      picked.sort((x, y) => y.ev - x.ev);
+      /* 並べるのは賭ける金額の大きい順（＝Kelly の f 順）にする。
+         選ぶ基準は増え方（g）だが、買う人が読むのは金額の順なので、
+         表示と金額が食い違わないようにそろえる。 */
+      picked.sort((x, y) => y.f - x.f);
       return {kept: picked, cut: all.length - picked.length, cover: cover};
     }
 
-    const pt = (combo, pm, pk, kind) => ({
-      combo: combo, hit: pm, needOdds: pm > 0 ? 1 / pm : Infinity,
-      ev: comboEv(pm, pk, kind)
-    });
-    const wide = up.level === "high";              // 荒れるレースは点数を増やす
+    const pt = (combo, pm, pk, kind) => {
+      const ev = comboEv(pm, pk, kind);
+      return {combo: combo, hit: pm, needOdds: pm > 0 ? 1 / pm : Infinity,
+              ev: ev, f: kellyFraction(pm, ev), g: growth(pm, ev)};
+    };
+    // 荒れるレースは相手を広げる（ただし投入額は upset.stakeScale で絞る）
+    const spread = up.level === "high" ? 2 : up.level === "mid" ? 1 : 0;
+    const opts = (kind) => {
+      const o = pol.kinds[kind] || EXTRA_KINDS[kind];
+      if(!o) return null;
+      return Object.assign({}, o, {
+        max: o.max + spread,
+        reserve: o.reserve + (spread ? 1 : 0),
+        cover: Math.min(0.9, o.cover * (1 + 0.15 * spread))
+      });
+    };
 
-    const shape = (g, name, prio, ratio, note) => {
-      if(!g.kept.length) return;
+    const shape = (g, name, kind, prio, ratio, note) => {
+      if(!g || !g.kept.length) return;
       const hit = g.kept.reduce((s, x) => s + x.hit, 0);
-      push({name: name, prio: prio, ratio: ratio,
+      push({name: name, kind: kind, prio: prio, ratio: ratio,
             combos: g.kept.map(x => x.combo),
             hit: hit, needOdds: need(hit, g.kept.length),
             points: g.kept, cut: g.cut,
@@ -1609,34 +1950,32 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
                   (g.cut ? `（割の合わない ${g.cut}通り を外しました）` : "")});
     };
 
+    const pairAll = (kind, prob) => {
+      const all = [];
+      for(let x = 0; x < cand.length; x++) for(let y = x+1; y < cand.length; y++){
+        all.push(pt(`${cand[x].h.num}-${cand[y].h.num}`,
+                    prob(probs, ci[x], ci[y]), prob(mkts, ci[x], ci[y]), kind));
+      }
+      return all;
+    };
+
+    // --- ワイド（2頭がともに3着以内）。取りこぼしを減らす主力 ---
+    if(n >= 4 && opts("wide")){
+      shape(selectPoints(pairAll("wide", wideProb), opts("wide")),
+            "ワイド", "wide", 80, opts("wide").ratio, "資金の増え方で選んだ組み合わせ");
+    }
+
     // --- 馬連（1・2着の組。順不同） ---
-    {
-      const all = [];
-      for(let x = 0; x < cand.length; x++) for(let y = x+1; y < cand.length; y++){
-        all.push(pt(`${cand[x].h.num}-${cand[y].h.num}`,
-                    quinellaProb(probs, ci[x], ci[y]),
-                    quinellaProb(mkts,  ci[x], ci[y]), "umaren"));
-      }
-      shape(selectPoints(all, {minEv: BUY_EV, minHit: 0.005, min: 2,
-                               max: wide ? 6 : 4, reserve: 2, cover: 0.12}),
-            "馬連", 80, 0.20, "期待値で選んだ組み合わせ");
+    if(opts("umaren")){
+      shape(selectPoints(pairAll("umaren", quinellaProb), opts("umaren")),
+            "馬連", "umaren", 70, opts("umaren").ratio, "資金の増え方で選んだ組み合わせ");
     }
 
-    // --- ワイド（2頭がともに3着以内）。出走4頭以上で発売 ---
-    if(n >= 4){
-      const all = [];
-      for(let x = 0; x < cand.length; x++) for(let y = x+1; y < cand.length; y++){
-        all.push(pt(`${cand[x].h.num}-${cand[y].h.num}`,
-                    wideProb(probs, ci[x], ci[y]),
-                    wideProb(mkts,  ci[x], ci[y]), "wide"));
-      }
-      shape(selectPoints(all, {minEv: BUY_EV, minHit: 0.02, min: 2,
-                               max: wide ? 4 : 3, reserve: 1, cover: 0.30}),
-            "ワイド", 70, wide ? 0.22 : 0.13, "取りこぼしを減らす");
-    }
-
-    // --- 三連複（3頭が3着以内。順不同）。堅いレースでは出さない ---
-    if(n >= 4 && up.level !== "low"){
+    /* --- 三連複（3頭が3着以内。順不同） ---
+       控除率25%。推定の誤差も大きく、人工のレースでは上位4頭BOXでも
+       的中15%・回収60%と、複勝・ワイドに両方の指標で負けた。
+       既定では出さない。明示的に指定されたときだけ、荒れるレースに限って出す。 */
+    if(n >= 4 && extras.sanrenpuku && up.level !== "low"){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = x+1; y < cand.length; y++)
@@ -1645,16 +1984,14 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
                         trioProb(probs, ci[x], ci[y], ci[z]),
                         trioProb(mkts,  ci[x], ci[y], ci[z]), "sanrenpuku"));
           }
-      shape(selectPoints(all, {minEv: BUY_EV, minHit: 0.003, min: 2,
-                               max: wide ? 8 : 6, reserve: 3, cover: 0.10}),
-            "三連複", 60, wide ? 0.28 : 0.20, "期待値で選んだ組み合わせ");
+      shape(selectPoints(all, opts("sanrenpuku")),
+            "三連複", "sanrenpuku", 40, opts("sanrenpuku").ratio, "資金の増え方で選んだ組み合わせ");
     }
 
     /* --- 三連単（着順まで当てる） ---
-       当たりにくい代わりにオッズが大きく、人気の並びが買われすぎる
-       （＝人気薄が絡む並びは割がよい）券種でもある。
-       推定の誤差はいちばん大きいので、下限を高くし点数も絞る。 */
-    if(n >= 4){
+       控除率27.5%と最も高く、推定は Harville の仮定にいちばん強く依存する。
+       人工のレースでは上位3頭BOXで的中6%・回収44%。既定では出さない。 */
+    if(n >= 4 && extras.sanrentan){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = 0; y < cand.length; y++)
@@ -1664,10 +2001,9 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
                         orderProb(probs, ci[x], ci[y], ci[z]),
                         orderProb(mkts,  ci[x], ci[y], ci[z]), "sanrentan"));
           }
-      const g = selectPoints(all, {minEv: SANRENTAN_EV, minHit: 0.0005, min: 3,
-                                   max: SANRENTAN_MAX, reserve: 4, cover: 0.03});
-      shape(g, "三連単", 30, wide ? 0.22 : 0.14,
-            g.kept.length ? `推定期待値の高い並び（最良 ${g.kept[0].combo} で ${g.kept[0].ev.toFixed(2)}）` : "");
+      const g = selectPoints(all, opts("sanrentan"));
+      shape(g, "三連単", "sanrentan", 20, opts("sanrentan").ratio,
+            g.kept.length ? `資金の増え方で選んだ並び（最良 ${g.kept[0].combo} で推定期待値 ${g.kept[0].ev.toFixed(2)}）` : "");
     }
 
     /* 券種としての推定期待値。同額で買うので、1点ごとの期待値の平均になる。 */
@@ -1685,14 +2021,28 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
 
     // 1点100円が最低単位のため、点数が多いと予算を超えることがある。
     // 収まるまで優先度の低い券種から落とす。
+    /* 1点ごとの金額。同額で並べるのではなく、資金がいちばん速く増える割合
+       （Kelly の f）に比例させる。同じ予算でも、当たりやすく割の良い点に
+       厚く乗るので、当たったときの取り返しが大きくなる。 */
     let live = bets.slice();
     const dropped = [];
     for(;;){
       const ratioSum = live.reduce((s, x) => s + x.ratio, 0);
       live.forEach(x => {
         const share = spend * (x.ratio / ratioSum);
-        x.unit = unitAmount(share, x.combos.length);
-        x.total = x.unit * x.combos.length;
+        const pts = x.points || [];
+        const fs = pts.length === x.combos.length
+          ? pts.map(p => (p && p.f > 0) ? p.f : 0) : [];
+        const fSum = fs.reduce((a, b) => a + b, 0);
+        if(fSum > 0){
+          x.units = fs.map(f => Math.max(100, Math.round(share * (f / fSum) / 100) * 100));
+        } else {
+          const u = unitAmount(share, x.combos.length);
+          x.units = x.combos.map(() => u);
+        }
+        x.unit = Math.min.apply(null, x.units);          // 表示用の最小単位
+        x.total = x.units.reduce((a, b) => a + b, 0);
+        (x.points || []).forEach((p, k) => { p.yen = x.units[k]; });
       });
       const used = live.reduce((s, x) => s + x.total, 0);
       if(used <= spend || live.length <= 1) break;
@@ -1701,8 +2051,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
-    return {bets: live, value, dropped, grade: grade, upset: up,
-            spend: spend, budget: budget};
+    return {bets: live, value, dropped, grade: grade, upset: up, policy: pol,
+            spend: spend, budget: budget, hitChance: hitChance(live, rows)};
   }
 
   /* ---------- 妙味・過剰人気の判定 ----------
@@ -1771,9 +2121,12 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     TRACKS, TRACK_KEYS, JRA_KEYS, NAR_KEYS, NANKAN_KEYS, CHIHO_KEYS,
     STYLES, STYLE_LABEL, PACE_BONUS, MARKS, MARK_NAME,
     posScore, styleBonus, wakuBonus, straightOf, infoLevelOf,
+    PART_KEYS, PART_LABEL, BLEND_BASE, scoreOf, blendProbs,
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
-    breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT,
+    breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
+    kellyFraction, growth, hitChance,
+    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
@@ -2699,6 +3052,8 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
       grade: r.grade || null,                            // v1 の記録には無い
       upset: r.upset || null,                            // v1 の記録には無い
       race: r.race || {},
+      // v1〜v3 の記録には無い。学習の対象外になるだけで、記録としては有効。
+      infoLevel: (typeof r.infoLevel === "number") ? r.infoLevel : null,
       pred: Array.isArray(r.pred) ? r.pred : [],
       bets: Array.isArray(r.bets) ? r.bets : [],
       result: r.result && r.result.first ? r.result : null
@@ -2831,6 +3186,17 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
     return 1;
   }
 
+  /* 項目ごとの点数。小数2桁で十分で、端末の保存領域も食わない。 */
+  function roundParts(parts){
+    if(!parts) return null;
+    const out = {};
+    Object.keys(parts).forEach(k => {
+      const v = Number(parts[k]);
+      if(isFinite(v)) out[k] = Math.round(v * 100) / 100;
+    });
+    return out;
+  }
+
   /* ---------- 保存用のレコードを組み立てる ---------- */
   function makeRecord(race, rows, bets, now, grade, upset){
     return {
@@ -2846,6 +3212,9 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
         pace: race.pace, budget: race.budget,
         name: race.name || "", raceNo: race.raceNo || null
       },
+      /* 情報量は学習で必要になる（ブレンドの重みを決めている値）。
+         記録した時点の値をそのまま残す。 */
+      infoLevel: rows.infoLevel != null ? Math.round(rows.infoLevel * 1000) / 1000 : null,
       pred: rows.map((x, i) => ({
         rank: i + 1,
         num: x.h.num,
@@ -2856,7 +3225,12 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
         score: Math.round(x.score * 10) / 10,
         prob: Math.round(x.prob * 10000) / 10000,
         ev: Math.round(x.ev * 100) / 100,
-        edge: Math.round(x.edge * 100) / 100
+        edge: Math.round(x.edge * 100) / 100,
+        /* 学習に使う「その日の入力」。着順が入ったあと、この項目の重みを
+           当てはめ直すために必要になる。予想そのものは書き換えないので、
+           あとから重みを変えても過去の記録は当時のまま残る。 */
+        market: Math.round(x.market * 100000) / 100000,
+        parts: roundParts(x.parts)
       })),
       bets: (bets || []).map(b => ({
         name: b.name, combos: b.combos, unit: b.unit, total: b.total
@@ -2874,7 +3248,7 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
   return {
     MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
     raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord
+    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord, roundParts
   };
 });
 
@@ -2897,7 +3271,9 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
   "use strict";
 
   const FORMAT = "turf-logic-backup";
-  const FORMAT_VERSION = 1;
+  /* v2 で「学習した重み」を追加した。v1 のバックアップは学習が無いだけで
+     そのまま読める（欠けた保存領域は既定値で埋める）。 */
+  const FORMAT_VERSION = 2;
 
   /* 保存対象。key は localStorage のキー、kind は中身の形。
      新しい保存領域が増えたらここに足せば、書き出しにも復元にも入る。 */
@@ -2905,7 +3281,8 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
     {name:"history",      key:"turf-logic-history-v1",      kind:"list",  label:"予想の記録"},
     {name:"jockeys",      key:"turf-logic-jockeys-v1",      kind:"map",   label:"騎手評価"},
     {name:"jockeyNames",  key:"turf-logic-jockey-names-v1", kind:"array", label:"騎手名の辞書"},
-    {name:"state",        key:"turf-logic-state-v2",        kind:"value", label:"入力中のレース"}
+    {name:"state",        key:"turf-logic-state-v2",        kind:"value", label:"入力中のレース"},
+    {name:"tune",         key:"turf-logic-tune-v1",         kind:"value", label:"学習した重み"}
   ];
 
   /* ---------- 書き出し ---------- */
@@ -2980,7 +3357,9 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
       history: n(d.history),
       jockeys: n(d.jockeys),
       jockeyNames: n(d.jockeyNames),
-      hasState: !!d.state
+      hasState: !!d.state,
+      hasTune: !!(d.tune && d.tune.weights),
+      tuneRaces: (d.tune && d.tune.races) || 0
     };
   }
 
@@ -3033,8 +3412,17 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
       jockeys: jockeys,
       jockeyNames: names,
       state: opts.restoreState && inc.state ? inc.state : (cur.state || null),
+      /* 学習した重みは、より多くのレースから学んだ方を残す。
+         記録そのものが混ざると学習し直せるので、これは暫定値でよい。 */
+      tune: pickTune(cur.tune, inc.tune),
       added: added
     };
+  }
+
+  function pickTune(a, b){
+    const n = t => (t && t.weights && t.races) ? t.races : -1;
+    if(n(a) < 0 && n(b) < 0) return a || b || null;
+    return n(b) > n(a) ? b : a;
   }
 
   /* 同じ id の記録が2つあるときの選び方。
@@ -3054,6 +3442,7 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
       jockeys: inc.jockeys || {},
       jockeyNames: inc.jockeyNames || [],
       state: inc.state || null,
+      tune: inc.tune || null,
       added: {history: (inc.history || []).length,
               jockeys: Object.keys(inc.jockeys || {}).length,
               jockeyNames: (inc.jockeyNames || []).length}
@@ -3062,7 +3451,399 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
 
   return {
     FORMAT, FORMAT_VERSION, STORES,
-    build, fileName, validate, summarize, merge, replace, pickRecord
+    build, fileName, validate, summarize, merge, replace, pickRecord, pickTune
+  };
+});
+
+/* ============================================================
+   Turf Logic — 記録から学ぶ
+   ------------------------------------------------------------
+   着順を入れた記録から、次の2つを当てはめ直す。
+
+     1. 項目ごとの重み（近走・騎手・調教・距離・馬場・展開・斤量・
+        馬体重増減・枠順）を、既定を 1.00 とする倍率で
+     2. 自分の見立てと市場（オッズ）をどの割合で混ぜるか
+
+   考え方は競馬の予想モデルで標準的な二段構えにしている。
+     第1段：能力の項目だけで「勝つ確率」を当てはめる（条件付きロジット）
+     第2段：それを市場の勝率と混ぜる割合を当てはめる
+   分けるのは、まとめて当てはめると市場が強すぎて項目側の手がかりが
+   埋もれてしまうためである。
+
+   ------------------------------------------------------------
+   少ない記録で学ぶときにいちばん危ないのは、たまたま当たった
+   数レースに合わせて重みが飛ぶことである。これを防ぐために:
+
+     ・重みは既定（1.00）に引き戻す力をかけながら当てはめる。
+       引き戻す力はレース数に反比例させてあるので、記録が増えるほど
+       データの言い分が通るようになる（＝使うほど効いてくる）。
+     ・当てはめに使っていないレースで検算し、既定より良くなっていない
+       ときは採用しない。「学習したのに悪くなる」を起こさないため。
+
+   予想そのものは書き換えない。学ぶのは次のレースの見方だけで、
+   過去の記録は当時の予想のまま残る。
+   ============================================================ */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports)
+    module.exports = factory(require("./engine.js"));
+  else root.TurfLearn = factory(root.TurfEngine);
+})(typeof self !== "undefined" ? self : this, function (E) {
+  "use strict";
+
+  const MIN_RACES   = 20;    // これ未満では当てはめない（偶然に合わせるだけになる）
+  const GOOD_RACES  = 60;    // このあたりから重みが実際に動きはじめる
+  const LAMBDA      = 9.0;   // 既定へ引き戻す力（レース数で割って効かせる）
+  const W_MIN = 0.40, W_MAX = 2.20;   // 倍率の可動域
+  const B_MIN = 0.00, B_MAX = 0.90;   // ブレンドの可動域
+  const GAIN_MIN = 0.004;    // 検算でこれだけ良くならなければ採用しない
+  /* 混ぜ方（blend）は1つの数字なのに、少ない記録では大きく振れる。
+     検算で分けて測ったところ、記録が少ないときに成績を落としていたのは
+     項目の重みではなくこちらだった（25レースで −0.049 対 −0.002）。
+     そのため、記録が BLEND_GATE に届くまでは動かさず、動かしたあとも
+     既定へ引き戻す。BLEND_K が大きいほど強く引き戻る。 */
+  /* 改善が偶然でないと言えるかの目安（改善 ÷ 標準誤差）。
+     1.6 はおおむね「95%の片側」に相当する。 */
+  const T_MIN = 1.6;
+  const BLEND_GATE = 80;
+  const BLEND_K    = 120;
+  const VERSION = 1;
+
+  const KEYS = E.PART_KEYS;
+
+  /* ---------- 記録 → 学習に使える形 ---------- */
+  function samples(records){
+    const out = [];
+    (records || []).forEach(r => {
+      if(!r || !r.result || !(r.result.first > 0)) return;
+      const pred = r.pred || [];
+      if(pred.length < 4) return;                       // 少頭数は手がかりが乏しい
+      if(!pred.every(p => p && p.parts && typeof p.market === "number" && p.market > 0)) return;
+      const win = pred.findIndex(p => p.num === r.result.first);
+      if(win < 0) return;                               // 1着馬が予想に無い（取消など）
+      const info = (typeof r.infoLevel === "number") ? r.infoLevel : null;
+      if(info == null) return;                          // 混ぜ方を再現できない
+      out.push({
+        id: r.id,
+        parts: pred.map(p => p.parts),
+        market: pred.map(p => p.market),
+        odds: pred.map(p => p.odds),
+        info: info,
+        win: win,
+        // 2着・3着も分かれば、複勝側の検算に使える
+        place: [r.result.first, r.result.second, r.result.third]
+          .filter(n => n > 0)
+          .map(n => pred.findIndex(p => p.num === n))
+          .filter(i => i >= 0)
+      });
+    });
+    return out;
+  }
+
+  /* ---------- 1レースぶんの確率を出し直す ----------
+     engine の scoreOf / blendProbs をそのまま使う。学習と予想で
+     計算が食い違わないようにするため、ここに式は書かない。 */
+  function probsOf(s, tune){
+    const scores = s.parts.map(p => E.scoreOf(p, tune));
+    return E.blendProbs(scores, s.market, s.info, tune);
+  }
+
+  /* 1着馬に与えた確率の対数損失。小さいほど当てられている。 */
+  function loss(ss, tune, useModelOnly){
+    if(!ss.length) return 0;
+    let sum = 0;
+    for(let i = 0; i < ss.length; i++){
+      const b = probsOf(ss[i], tune);
+      const p = (useModelOnly ? b.model : b.prob)[ss[i].win];
+      sum -= Math.log(Math.max(1e-12, p));
+    }
+    return sum / ss.length;
+  }
+
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const copyW = w => { const o = {}; KEYS.forEach(k => { o[k] = w[k]; }); return o; };
+
+  /* 倍率は全体を何倍しても softmax の温度が吸収してしまう（＝答えが1つに
+     決まらない）。平均を1にそろえて、比だけを意味のある量にする。 */
+  function normalizeW(w){
+    let s = 0;
+    KEYS.forEach(k => { s += w[k]; });
+    const m = s / KEYS.length;
+    if(!(m > 0)) return w;
+    KEYS.forEach(k => { w[k] = clamp(w[k] / m, W_MIN, W_MAX); });
+    return w;
+  }
+
+  /* ---------- 第1段：項目ごとの重み ----------
+     1項目ずつ動かして良くなる方向に寄せる（座標降下）。
+     項目が9つと少なく、レース数も多くないので、これで十分速く収まる。 */
+  function fitWeights(ss, opt){
+    opt = opt || {};
+    const lam = (opt.lambda != null ? opt.lambda : LAMBDA) / Math.max(1, ss.length);
+    const w = {};
+    KEYS.forEach(k => { w[k] = 1; });
+
+    const penalty = ww => {
+      let s = 0;
+      KEYS.forEach(k => { const d = ww[k] - 1; s += d * d; });
+      return lam * s;
+    };
+    const obj = ww => loss(ss, {weights: ww}, true) + penalty(ww);
+
+    let best = obj(w);
+    let step = 0.32;
+    for(let round = 0; round < 24 && step > 0.01; round++){
+      let moved = false;
+      for(let i = 0; i < KEYS.length; i++){
+        const k = KEYS[i];
+        const cur = w[k];
+        for(const d of [step, -step]){
+          const trial = copyW(w);
+          trial[k] = clamp(cur + d, W_MIN, W_MAX);
+          if(trial[k] === cur) continue;
+          normalizeW(trial);
+          const v = obj(trial);
+          if(v < best - 1e-9){
+            best = v; KEYS.forEach(kk => { w[kk] = trial[kk]; }); moved = true;
+            break;
+          }
+        }
+      }
+      if(!moved) step *= 0.5;
+    }
+    return {weights: normalizeW(w), loss: best};
+  }
+
+  /* ---------- 第2段：市場とどれだけ混ぜるか ----------
+     W = 1 − blend × 情報量。blend が 0 なら市場そのもの、
+     大きいほど自分の見立てに寄せる。1変数なので総当たりで足りる。 */
+  function fitBlend(ss, weights, opt){
+    opt = opt || {};
+    const gate = opt.gate != null ? opt.gate : BLEND_GATE;
+    if(ss.length < gate){
+      return {blend: null, loss: loss(ss, {weights: weights}, false), held: true};
+    }
+    let bestB = E.BLEND_BASE, best = Infinity;
+    for(let b = B_MIN; b <= B_MAX + 1e-9; b += 0.05){
+      const v = loss(ss, {weights: weights, blend: b}, false);
+      if(v < best){ best = v; bestB = b; }
+    }
+    // 既定へ引き戻す。記録が増えるほど、当てはめた値がそのまま通る。
+    const K = opt.k != null ? opt.k : BLEND_K;
+    const pulled = E.BLEND_BASE + (bestB - E.BLEND_BASE) * ss.length / (ss.length + K);
+    const v = clamp(Math.round(pulled * 100) / 100, B_MIN, B_MAX);
+    return {blend: v, raw: Math.round(bestB * 100) / 100,
+            loss: loss(ss, {weights: weights, blend: v}, false)};
+  }
+
+  /* ---------- 検算 ----------
+     当てはめに使っていないレースで、既定より良くなっているかを見る。
+     記録が少ないうちは1レースずつ抜き、増えたら5分割にする。
+
+     大事なのは「良くなったか」ではなく「良くなったと言えるか」である。
+     24レースで試すと、改善が出るか出ないかは種を変えるだけで
+     ひっくり返った（+0.016 / +0.010 / +0.007 / −0.005 / −0.003）。
+     平均が正でも、それがばらつきの範囲内なら偶然でしかない。
+     そこでレースごとの改善幅の標準誤差も出し、
+     採用の判断はそれを超えているかどうかで行う。 */
+  function crossValidate(ss, opt){
+    const k = ss.length < 40 ? Math.min(ss.length, 10) : 5;
+    const folds = [];
+    for(let i = 0; i < k; i++) folds.push([]);
+    ss.forEach((s, i) => { folds[i % k].push(s); });
+
+    const gains = [];
+    let base = 0, tuned = 0, n = 0;
+    for(let i = 0; i < k; i++){
+      const test = folds[i];
+      if(!test.length) continue;
+      const train = [];
+      for(let j = 0; j < k; j++) if(j !== i) train.push.apply(train, folds[j]);
+      if(train.length < 4) continue;
+      const fw = fitWeights(train, opt);
+      const fb = fitBlend(train, fw.weights, opt);
+      const t = {weights: fw.weights, blend: fb.blend};
+      test.forEach(one => {
+        const b = loss([one], null, false);
+        const u = loss([one], t, false);
+        gains.push(b - u);
+        base += b; tuned += u; n++;
+      });
+    }
+    if(!n) return null;
+    const gain = (base - tuned) / n;
+    let v = 0;
+    gains.forEach(g => { const d = g - gain; v += d * d; });
+    const se = n > 1 ? Math.sqrt(v / (n - 1) / n) : Infinity;
+    return {races: n, baseLoss: base / n, tunedLoss: tuned / n,
+            gain: gain, se: se, t: se > 0 ? gain / se : 0};
+  }
+
+  /* ---------- 学習の本体 ---------- */
+  function learn(records, opt){
+    opt = opt || {};
+    const ss = samples(records);
+    if(ss.length < (opt.minRaces || MIN_RACES)){
+      return {ok: false, reason: "few", races: ss.length,
+              need: (opt.minRaces || MIN_RACES), tune: null,
+              message: `着順まで入った記録が ${ss.length} レースです。` +
+                       `${opt.minRaces || MIN_RACES} レース貯まると学習を始めます。`};
+    }
+
+    const cv = crossValidate(ss, opt);
+    const fw = fitWeights(ss, opt);
+    const fb = fitBlend(ss, fw.weights, opt);
+    const tune = {
+      version: VERSION,
+      races: ss.length,
+      weights: fw.weights,
+      blend: fb.blend,
+      fittedAt: opt.now || 0,
+      check: cv
+    };
+
+    /* 検算で良くなっていないなら採用しない。
+       「学習したのに当たらなくなった」を起こさないため。
+       ばらつきの範囲内の改善（t が小さい）も、偶然として通さない。 */
+    const solid = cv && cv.gain >= GAIN_MIN && cv.t >= T_MIN;
+    if(!solid){
+      return {ok: false, reason: "nogain", races: ss.length, tune: null, draft: tune, check: cv,
+              message: cv
+                ? `使っていないレースで確かめたところ、学習しても当てられ方が良くなるとは言えませんでした` +
+                  `（${cv.baseLoss.toFixed(3)} → ${cv.tunedLoss.toFixed(3)}／` +
+                  `偶然でないと言うには記録が足りません）。` +
+                  `いまの見方のままにします。記録が増えるとまた試します。`
+                : "検算できるだけの記録がありません。"};
+    }
+
+    return {ok: true, races: ss.length, tune: tune, check: cv,
+            message: `${ss.length} レースから学習しました。` +
+                     `使っていないレースで確かめて、当てられ方が良くなっています` +
+                     `（${cv.baseLoss.toFixed(3)} → ${cv.tunedLoss.toFixed(3)}）。`};
+  }
+
+  /* ---------- 学んだ結果を言葉にする ---------- */
+  function explain(tune){
+    if(!tune || !tune.weights) return [];
+    const out = [];
+    KEYS.slice().sort((a, b) => Math.abs(tune.weights[b] - 1) - Math.abs(tune.weights[a] - 1))
+        .forEach(k => {
+          const v = tune.weights[k];
+          if(Math.abs(v - 1) < 0.06) return;
+          out.push({
+            key: k, label: E.PART_LABEL[k] || k, mult: Math.round(v * 100) / 100,
+            text: v > 1
+              ? `${E.PART_LABEL[k]}は、これまでより重く見ます（×${v.toFixed(2)}）`
+              : `${E.PART_LABEL[k]}は、これまでより軽く見ます（×${v.toFixed(2)}）`
+          });
+        });
+    if(tune.blend != null){
+      const d = tune.blend - E.BLEND_BASE;
+      if(Math.abs(d) >= 0.03){
+        out.push({
+          key: "blend", label: "オッズとの混ぜ方",
+          mult: Math.round(tune.blend * 100) / 100,
+          text: d > 0
+            ? `材料が揃ったレースでは、これまでより自分の見立てに寄せます（${E.BLEND_BASE.toFixed(2)} → ${tune.blend.toFixed(2)}）`
+            : `オッズをこれまでより信じます（${E.BLEND_BASE.toFixed(2)} → ${tune.blend.toFixed(2)}）。` +
+              `入力からの上積みが、まだはっきりしていないということです`
+        });
+      }
+    }
+    return out;
+  }
+
+  /* ---------- 較正 ----------
+     「推定勝率20%と出した馬は、本当に20%勝っているか」を帯ごとに数える。
+     出している数字が信用できるかどうかは、これでしか分からない。 */
+  const BANDS = [[0,0.05],[0.05,0.10],[0.10,0.20],[0.20,0.35],[0.35,1.01]];
+
+  function calibration(records, tune){
+    const ss = samples(records);
+    const rows = BANDS.map(b => ({from: b[0], to: b[1], n: 0, expect: 0, actual: 0}));
+    ss.forEach(s => {
+      const p = probsOf(s, tune).prob;
+      p.forEach((v, i) => {
+        const bi = BANDS.findIndex(b => v >= b[0] && v < b[1]);
+        if(bi < 0) return;
+        rows[bi].n++; rows[bi].expect += v;
+        if(i === s.win) rows[bi].actual++;
+      });
+    });
+    return rows.filter(r => r.n > 0).map(r => ({
+      from: r.from, to: r.to, n: r.n,
+      expect: r.expect / r.n,
+      actual: r.actual / r.n
+    }));
+  }
+
+  /* ---------- 市場に勝てているか ----------
+     いちばん大事な検算。自分の1位指名が、1番人気より当たっているか。
+     ここが負けているうちは、オッズどおりに買うほうが正しい。 */
+  function versusMarket(records, tune){
+    const ss = samples(records);
+    if(!ss.length) return null;
+    let ours = 0, fav = 0, ourLoss = 0, mktLoss = 0;
+    ss.forEach(s => {
+      const b = probsOf(s, tune);
+      let oi = 0, fi = 0;
+      b.prob.forEach((v, i) => { if(v > b.prob[oi]) oi = i; });
+      s.market.forEach((v, i) => { if(v > s.market[fi]) fi = i; });
+      if(oi === s.win) ours++;
+      if(fi === s.win) fav++;
+      ourLoss -= Math.log(Math.max(1e-12, b.prob[s.win]));
+      mktLoss -= Math.log(Math.max(1e-12, s.market[s.win]));
+    });
+    const n = ss.length;
+    return {races: n,
+            ourWin: ours / n, favWin: fav / n,
+            ourLoss: ourLoss / n, marketLoss: mktLoss / n,
+            beatsMarket: ourLoss < mktLoss};
+  }
+
+  /* ---------- 1レースの振り返り ----------
+     着順を入れた直後に出す。「なぜ外したか」を、その日の入力から言う。 */
+  function review(record, tune){
+    if(!record || !record.result || !(record.result.first > 0)) return null;
+    const pred = record.pred || [];
+    const winner = pred.find(p => p.num === record.result.first);
+    if(!winner) return {lines: ["1着馬が予想に入っていません（取消・除外の扱いを確かめてください）。"]};
+
+    const lines = [];
+    lines.push(`1着 ${record.result.first}番 は、予想 ${winner.rank}位` +
+               `（推定勝率 ${(winner.prob * 100).toFixed(1)}% ・ ${winner.odds}倍）でした。`);
+
+    if(winner.rank === 1) lines.push("本命が勝ちました。いまの見方は、このレースでは合っていました。");
+    else if(winner.rank <= 3) lines.push("上位に入れてはいました。決め手が足りなかった形です。");
+
+    if(typeof winner.edge === "number"){
+      if(winner.edge >= 1.10) lines.push("市場より高く見ていた馬が勝ちました。見立てのほうが正しかった一例です。");
+      else if(winner.edge <= 0.90) lines.push("市場より低く見ていた馬が勝ちました。この馬を下げた項目を見直す材料になります。");
+    }
+
+    /* どの項目でこの馬を下げていたか。出走馬の平均との差で見る。 */
+    if(winner.parts && pred.every(p => p.parts)){
+      const diffs = [];
+      E.PART_KEYS.forEach(k => {
+        const vals = pred.map(p => (p.parts[k] != null ? p.parts[k] : 0));
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const d = (winner.parts[k] != null ? winner.parts[k] : 0) - avg;
+        if(Math.abs(d) >= 0.8) diffs.push({key: k, label: E.PART_LABEL[k] || k, d: d});
+      });
+      diffs.sort((a, b) => a.d - b.d);
+      const worst = diffs[0];
+      if(worst && worst.d < 0 && winner.rank > 1){
+        lines.push(`この馬をいちばん下げていたのは「${worst.label}」でした` +
+                   `（平均より ${worst.d.toFixed(1)}点）。`);
+      }
+    }
+    return {lines: lines, winnerRank: winner.rank};
+  }
+
+  return {
+    MIN_RACES, GOOD_RACES, LAMBDA, GAIN_MIN, T_MIN, VERSION, KEYS,
+    BLEND_GATE, BLEND_K,
+    samples, probsOf, loss, fitWeights, fitBlend, crossValidate,
+    learn, explain, calibration, versusMarket, review
   };
 });
 
@@ -3074,6 +3855,7 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
 "use strict";
 
 const E = window.TurfEngine;
+const LN = window.TurfLearn;
 const $ = id => document.getElementById(id);
 
 const STORAGE_KEY = "turf-logic-state-v2";
@@ -3146,7 +3928,10 @@ function race(){
     distance: numOr($("distance").value, 1800),
     condition: numOr($("condition").value, 0),
     pace: $("pace").value,
-    budget: numOr($("budget").value, 5000)
+    budget: numOr($("budget").value, 5000),
+    policy: $("policy").value,
+    sanrenpuku: $("useSanrenpuku").checked,
+    sanrentan: $("useSanrentan").checked
   };
 }
 function applyRace(r){
@@ -3159,7 +3944,17 @@ function applyRace(r){
   if(r.condition != null) $("condition").value = r.condition;
   if(r.pace) $("pace").value = r.pace;
   if(r.budget != null) $("budget").value = r.budget;
+  if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
+  $("useSanrenpuku").checked = !!r.sanrenpuku;
+  $("useSanrentan").checked  = !!r.sanrentan;
+  syncPolicyNote();
   syncTrackUI();
+}
+
+/* 選んだ買い方が何をするのかを、選んだ場で見せる */
+function syncPolicyNote(){
+  const p = E.policyOf($("policy").value);
+  $("policyNote").textContent = p.lead;
 }
 
 /* ============================================================
@@ -3434,10 +4229,15 @@ function run(){
     if(!h.scratched && h.odds < 1){ alert("オッズは1.0以上で入力してください（馬番 " + h.num + "）。"); return; }
   }
 
-  const rows = E.analyze(r, hs);
+  const tn = activeTune();
+  const rows = E.analyze(r, hs, tn);
   // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
-  E.fillBreakEven(r, hs, rows);
-  const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
+  E.fillBreakEven(r, hs, rows, tn);
+  const {bets, value, dropped, grade, upset, spend, policy, hitChance} =
+    E.buildBets(rows, r.budget, {
+      policy: r.policy,
+      extras: {sanrenpuku: r.sanrenpuku, sanrentan: r.sanrentan}
+    });
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -3530,6 +4330,18 @@ function run(){
     ? `予算 ${yen(r.budget)} ／ 投入 ${yen(spend)} ／ 使用 ${yen(spent)}`
     : `予算 ${yen(r.budget)} ／ 使用 0円`;
 
+  /* この買い目で「何か1点でも当たる」確率。券種をまたぐ的中の重なりを
+     数え上げて出している。当たる回数がどれくらい見込めるかを先に示す。 */
+  const hc = $("hitChance");
+  hc.hidden = !bets.length;
+  if(bets.length){
+    hc.innerHTML =
+      `<span class="hc-k">この買い目で何か当たる確率</span>` +
+      `<span class="hc-v mono">${(hitChance*100).toFixed(0)}%</span>` +
+      `<span class="hc-p">買い方：${escapeHtml(policy.label)}</span>` +
+      `<span class="hc-note">推定勝率から出した見込みです。実際はこれより数ポイント下がります。</span>`;
+  }
+
   $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
@@ -3539,22 +4351,26 @@ function run(){
         ${x.evKnown != null
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
           : x.evEst != null
-            ? `<span class="k">推定期待値</span><span class="v ev-ok">${x.evEst.toFixed(2)}</span>`
+            ? `<span class="k">推定期待値</span><span class="v ${x.evEst >= 1 ? "ev-ok" : "ev-ng"}">${x.evEst.toFixed(2)}</span>`
             : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
+      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割っています。当たる回数を支えるために買う1点で、
+        この点だけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
-        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
+        <tr><th>買い目</th><th>金額</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
         ${x.points.map(pt => `<tr>
           <td class="mono">${escapeHtml(pt.combo)}</td>
+          <td class="mono yen">${yen(pt.yen != null ? pt.yen : x.unit)}</td>
           <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
           <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
           <td class="mono need">${pt.ev != null ? pt.ev.toFixed(2) : "—"}</td>
         </tr>`).join("")}
       </table>
-      <div class="hint">実際のオッズが必要オッズを下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
+      <div class="hint">金額は点ごとに変えてあります（資金がいちばん速く増える割合に比例）。
+        実際のオッズが必要オッズを下回る点は、その点だけ外してください。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
-      <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
+      <div class="money">${x.combos.length > 1 ? "" : "1点 "}<b>${yen(x.total)}</b>${x.combos.length > 1 ? " ／ " + x.combos.length + "点" : ""}</div>
     </div>`).join("")
     : `<p class="empty">このレースは買いません。資金を次のレースに残してください。</p>`;
 
@@ -3565,7 +4381,11 @@ function run(){
                "実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。");
   }
   const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
-  if(cutN) notes.push(`推定期待値が1.0を割る ${cutN}点 は、はじめから外してあります。`);
+  if(cutN) notes.push(`割の合わない ${cutN}点 は、はじめから外してあります。`);
+  if(bets.length && !r.sanrenpuku && !r.sanrentan){
+    notes.push("三連複・三連単は出していません。控除率が高いうえ推定の誤差も大きく、" +
+               "検証では的中率でも回収率でも複勝・ワイドに負けたためです。買う場合は上のチェックを入れてください。");
+  }
   $("droppedNote").textContent = notes.join(" ");
 
   lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};
@@ -3747,6 +4567,7 @@ function loadSample(){
 }
 
 /* ---------- イベント ---------- */
+$("policy").addEventListener("change", syncPolicyNote);
 $("track").addEventListener("change", syncTrackUI);
 $("surface").addEventListener("change", syncTrackUI);
 $("course").addEventListener("change", syncTrackUI);
@@ -3894,6 +4715,7 @@ $("importFile").addEventListener("change", e => {
 /* ---------- 初期表示 ---------- */
 buildTrackSelect();
 syncTrackUI();
+syncPolicyNote();
 addHorses(6);
 
 /* ============================================================
@@ -3902,6 +4724,36 @@ addHorses(6);
    集計は TurfHistory（keiba/history.js）に委ねる。
    ============================================================ */
 const HIST_KEY = "turf-logic-history-v1";
+const TUNE_KEY = "turf-logic-tune-v1";
+
+/* ============================================================
+   記録から学んだ重み
+   ------------------------------------------------------------
+   着順を入れるたびに学習をやり直す。学習が採用されるのは、
+   当てはめに使っていないレースで当てられ方が良くなったときだけ。
+   採用されなければ既定のまま動く（＝悪くならない）。
+   ============================================================ */
+let tune = null;          // 採用中の重み。null なら既定
+let lastLearn = null;     // 直近の学習結果（採用・見送りの理由を出すため）
+let learnBusy = false;
+
+function loadTune(){
+  try{
+    const o = JSON.parse(localStorage.getItem(TUNE_KEY) || "null");
+    return (o && o.weights) ? o : null;
+  }catch(e){ return null; }
+}
+function saveTune(t){
+  try{
+    if(t) localStorage.setItem(TUNE_KEY, JSON.stringify(t));
+    else localStorage.removeItem(TUNE_KEY);
+    return true;
+  }catch(e){ return false; }
+}
+// 学習を使うかどうか（切っておけば既定の見方に戻る）
+function tuneOn(){ return $("useTune") ? $("useTune").checked : true; }
+function activeTune(){ return tuneOn() ? tune : null; }
+
 const H = window.TurfHistory;
 
 function loadHistory(){
@@ -4024,6 +4876,7 @@ function renderHistory(){
           <button type="button" class="primary" data-act="save">結果を記録</button>
           <button type="button" class="danger" data-act="delete">削除</button>
         </div>
+        <div class="review" hidden></div>
       </div>
     </details>`;
   }).join("");
@@ -4057,7 +4910,130 @@ $("histList").addEventListener("click", e => {
   saveHistory(history);
   renderHistory();
   renderJockeys();
+  showReview(r);
+  autoRelearn();
 });
+
+/* ---------- 1レースの振り返り ----------
+   着順を入れた直後に、そのレースで何を外したのかを出す。 */
+function showReview(rec){
+  const box = document.querySelector(`.hist[data-id="${rec.id}"] .review`);
+  if(!box) return;
+  const rv = LN.review(rec, activeTune());
+  if(!rv){ box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<div class="rv-head">振り返り</div>` +
+    rv.lines.map(l => `<div class="rv-line">${escapeHtml(l)}</div>`).join("");
+}
+
+/* ============================================================
+   学習パネル
+   ============================================================ */
+/* 学習は記録300件で1〜2秒（端末によってはその数倍）かかる。
+   着順を1つ入れるたびに回すと、そのぶん画面が固まる。
+   前回の学習から一定件数ぶん増えたときだけ自動でやり直し、
+   すぐ反映したいときは「いま学習する」を押してもらう。 */
+const RELEARN_EVERY = 5;
+
+function autoRelearn(){
+  const usable = LN.samples(history).length;
+  if(usable < LN.MIN_RACES) return;
+  const since = usable - (lastLearn && lastLearn.races != null ? lastLearn.races
+                          : (tune ? tune.races : 0));
+  if(lastLearn && since < RELEARN_EVERY) return;
+  relearn();
+}
+
+function relearn(opt){
+  if(learnBusy) return;
+  learnBusy = true;
+  const note = $("learnNote");
+  if(note) note.textContent = "記録を数え直しています…";
+  /* 記録が多いと数秒かかる。画面を描き替えてから計算に入る。 */
+  setTimeout(() => {
+    try{
+      const out = LN.learn(history, {now: Date.now()});
+      lastLearn = out;
+      if(out.ok){
+        tune = out.tune;
+        saveTune(tune);
+      } else if((opt && opt.clearOnFail) || out.reason === "few"){
+        // 学ぶものが無い状態に戻ったら、既定の見方へ戻す
+        if(out.reason === "few"){ tune = null; saveTune(null); }
+      }
+    } finally {
+      learnBusy = false;
+      renderLearn();
+    }
+  }, 30);
+}
+
+function renderLearn(){
+  const panel = $("learnPanel");
+  if(!panel) return;
+  const usable = LN.samples(history).length;
+  $("learnCount").textContent = `学習に使える記録 ${usable}件`;
+
+  const on = tuneOn();
+  $("learnState").className = "learn-state " + (tune && on ? "s-on" : "s-off");
+  $("learnState").textContent = tune
+    ? (on ? `${tune.races}レースから学習した見方で予想します` : "学習を切っています（既定の見方）")
+    : "まだ学習していません（既定の見方）";
+
+  const note = $("learnNote");
+  if(lastLearn) note.textContent = lastLearn.message;
+  else if(usable < LN.MIN_RACES)
+    note.textContent = `着順まで入った記録が ${usable} レースです。` +
+      `${LN.MIN_RACES} レースから学習を試し始めます。` +
+      `実際に見方が変わるのは、たいてい100レース前後からです。`;
+  else note.textContent = "「いま学習する」を押すと、記録から見方を当てはめ直します。";
+
+  // 学んだ内容
+  const lines = tune ? LN.explain(tune) : [];
+  $("learnWeights").innerHTML = lines.length
+    ? lines.map(x => `<li>${escapeHtml(x.text)}</li>`).join("")
+    : "";
+  $("learnWeights").hidden = !lines.length;
+
+  // 市場に勝てているか
+  const vm = LN.versusMarket(history, activeTune());
+  const vmBox = $("learnVs");
+  vmBox.hidden = !vm;
+  if(vm){
+    vmBox.innerHTML =
+      `<div class="vs-row"><span>1位指名が1着</span>` +
+      `<b class="mono">${(vm.ourWin*100).toFixed(1)}%</b>` +
+      `<span class="vs-vs">対</span><span>1番人気</span>` +
+      `<b class="mono">${(vm.favWin*100).toFixed(1)}%</b></div>` +
+      `<div class="vs-note ${vm.beatsMarket ? "good" : "bad"}">` +
+      (vm.beatsMarket
+        ? "予想はオッズより当たっています。自分の見立てに寄せる価値があります。"
+        : "予想はまだオッズを上回っていません。この状態では、オッズどおりに買うほうが正しくなります。") +
+      `（${vm.races}レースで検算）</div>`;
+  }
+
+  // 較正（出した勝率と実際）
+  const cal = LN.calibration(history, activeTune()).filter(c => c.n >= 20);
+  const calBox = $("learnCal");
+  calBox.hidden = !cal.length;
+  if(cal.length){
+    calBox.innerHTML =
+      `<tr><th>推定勝率</th><th>頭数</th><th>出した</th><th>実際</th></tr>` +
+      cal.map(c => `<tr>
+        <td class="mono">${(c.from*100).toFixed(0)}〜${Math.min(100, c.to*100).toFixed(0)}%</td>
+        <td class="mono">${c.n}</td>
+        <td class="mono">${(c.expect*100).toFixed(1)}%</td>
+        <td class="mono ${c.actual < c.expect * 0.75 ? "cal-over" : c.actual > c.expect * 1.3 ? "cal-under" : ""}">${(c.actual*100).toFixed(1)}%</td>
+      </tr>`).join("");
+  }
+}
+
+$("btnLearn") && $("btnLearn").addEventListener("click", () => relearn({clearOnFail:true}));
+$("btnLearnReset") && $("btnLearnReset").addEventListener("click", () => {
+  if(!confirm("学習した重みを消して、既定の見方に戻します。よろしいですか？\n（予想の記録は消えません。もう一度学習すれば戻せます）")) return;
+  tune = null; lastLearn = null; saveTune(null); renderLearn();
+});
+$("useTune") && $("useTune").addEventListener("change", renderLearn);
 
 /* ---------- 予想の保存 ---------- */
 $("btnSaveRace").addEventListener("click", () => {
@@ -4075,6 +5051,8 @@ $("btnSaveRace").addEventListener("click", () => {
 
 renderGradeGuide();
 renderHistory();
+tune = loadTune();
+renderLearn();
 
 /* ============================================================
    データの保存（端末の外へ）
@@ -4146,7 +5124,8 @@ function collectStores(){
     history: history,
     jockeys: jockeyRatings,
     jockeyNames: knownJockeyNames,
-    state: read(STORAGE_KEY, null)
+    state: read(STORAGE_KEY, null),
+    tune: tune
   };
 }
 
@@ -4154,6 +5133,7 @@ function applyStores(s){
   history = H.normalize(s.history || []);
   jockeyRatings = s.jockeys || {};
   knownJockeyNames = s.jockeyNames || [];
+  if(s.tune !== undefined){ tune = (s.tune && s.tune.weights) ? s.tune : null; saveTune(tune); }
   saveHistory(history);
   saveJockeys(jockeyRatings);
   try{ localStorage.setItem(JOCKEY_NAMES_KEY, JSON.stringify(knownJockeyNames)); }catch(e){}
@@ -4162,6 +5142,7 @@ function applyStores(s){
   }
   renderHistory();
   renderJockeys();
+  renderLearn();
 }
 
 function backupJson(){

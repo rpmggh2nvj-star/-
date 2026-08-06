@@ -29,6 +29,7 @@ const parser = read("parse.js");
 const pdftext = read("pdftext.js");
 const historyjs = read("history.js");
 const backupjs = read("backup.js");
+const learnjs = read("learn.js");
 const style  = read("ui/style.html");
 const body   = read("ui/body.html");
 const app    = read("ui/app.js");
@@ -36,7 +37,7 @@ const app    = read("ui/app.js");
 const banner = "/* このファイルは keiba/build.js が生成します。直接編集せず、" +
                "keiba/engine.js と keiba/ui/* を編集してください。 */";
 
-const script = `<script>\n${banner}\n${engine}\n${parser}\n${pdftext}\n${historyjs}\n${backupjs}\n${app}\n</script>`;
+const script = `<script>\n${banner}\n${engine}\n${parser}\n${pdftext}\n${historyjs}\n${backupjs}\n${learnjs}\n${app}\n</script>`;
 
 // pdf.js は ESM のため type="module" で読み込む。
 // worker を先に読ませて globalThis.pdfjsWorker を立てると、pdf.js は
@@ -184,6 +185,41 @@ ${swRegister}
 </html>
 `;
 
+/* リポジトリ直下の転送ページ。
+
+   GitHub Pages の配信元が「/docs」か「/(root)」かで、アプリのURLが
+   https://＜ユーザー＞.github.io/＜リポジトリ＞/ か .../docs/ に変わる。
+   人に配るURLが設定次第で変わるのは具合が悪いので、直下に転送を置いて
+   どちらの設定でも同じURLで開けるようにする。
+
+   配信元が /docs のときはこのファイル自体が配信されないので、何も起きない。 */
+const rootIndex =
+`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${APP_TITLE}</title>
+<link rel="canonical" href="docs/">
+<meta http-equiv="refresh" content="0; url=docs/">
+<style>
+  body{font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;
+       background:#F2F1EA;color:#22261F;display:grid;place-items:center;
+       min-height:100vh;margin:0;padding:24px;text-align:center;line-height:1.8}
+  a{color:#1F5C3D;font-weight:700;font-size:1.1rem}
+</style>
+</head>
+<body>
+  <div>
+    <p>アプリを開いています…</p>
+    <p><a href="docs/">開かない場合はこちらをタップ</a></p>
+  </div>
+  <script>location.replace("docs/");</script>
+</body>
+</html>
+`;
+fs.writeFileSync(path.join(ROOT, "index.html"), rootIndex, "utf8");
+
 const DOCS = path.join(ROOT, "docs");
 fs.mkdirSync(DOCS, {recursive: true});
 fs.writeFileSync(path.join(DOCS, "index.html"), pwaIndex, "utf8");
@@ -200,3 +236,4 @@ console.log("ビルド完了");
 console.log("  keiba-yosou.html     " + kb(standalone));
 console.log("  artifact-keiba.html  " + kb(artifact));
 console.log("  docs/index.html      " + kb(pwaIndex) + "（＋ manifest / sw.js / アイコン3種）");
+console.log("  index.html           " + kb(rootIndex) + "（docs/ への転送）");
