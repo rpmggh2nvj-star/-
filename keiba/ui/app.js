@@ -78,7 +78,10 @@ function race(){
     distance: numOr($("distance").value, 1800),
     condition: numOr($("condition").value, 0),
     pace: $("pace").value,
-    budget: numOr($("budget").value, 5000)
+    budget: numOr($("budget").value, 5000),
+    policy: $("policy").value,
+    sanrenpuku: $("useSanrenpuku").checked,
+    sanrentan: $("useSanrentan").checked
   };
 }
 function applyRace(r){
@@ -91,7 +94,17 @@ function applyRace(r){
   if(r.condition != null) $("condition").value = r.condition;
   if(r.pace) $("pace").value = r.pace;
   if(r.budget != null) $("budget").value = r.budget;
+  if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
+  $("useSanrenpuku").checked = !!r.sanrenpuku;
+  $("useSanrentan").checked  = !!r.sanrentan;
+  syncPolicyNote();
   syncTrackUI();
+}
+
+/* 選んだ買い方が何をするのかを、選んだ場で見せる */
+function syncPolicyNote(){
+  const p = E.policyOf($("policy").value);
+  $("policyNote").textContent = p.lead;
 }
 
 /* ============================================================
@@ -369,7 +382,11 @@ function run(){
   const rows = E.analyze(r, hs);
   // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
   E.fillBreakEven(r, hs, rows);
-  const {bets, value, dropped, grade, upset, spend} = E.buildBets(rows, r.budget);
+  const {bets, value, dropped, grade, upset, spend, policy, hitChance} =
+    E.buildBets(rows, r.budget, {
+      policy: r.policy,
+      extras: {sanrenpuku: r.sanrenpuku, sanrentan: r.sanrentan}
+    });
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -462,6 +479,18 @@ function run(){
     ? `予算 ${yen(r.budget)} ／ 投入 ${yen(spend)} ／ 使用 ${yen(spent)}`
     : `予算 ${yen(r.budget)} ／ 使用 0円`;
 
+  /* この買い目で「何か1点でも当たる」確率。券種をまたぐ的中の重なりを
+     数え上げて出している。当たる回数がどれくらい見込めるかを先に示す。 */
+  const hc = $("hitChance");
+  hc.hidden = !bets.length;
+  if(bets.length){
+    hc.innerHTML =
+      `<span class="hc-k">この買い目で何か当たる確率</span>` +
+      `<span class="hc-v mono">${(hitChance*100).toFixed(0)}%</span>` +
+      `<span class="hc-p">買い方：${escapeHtml(policy.label)}</span>` +
+      `<span class="hc-note">推定勝率から出した見込みです。実際はこれより数ポイント下がります。</span>`;
+  }
+
   $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
@@ -471,22 +500,26 @@ function run(){
         ${x.evKnown != null
           ? `<span class="k">期待値</span><span class="v ev-ok">${x.evKnown.toFixed(2)}</span>`
           : x.evEst != null
-            ? `<span class="k">推定期待値</span><span class="v ev-ok">${x.evEst.toFixed(2)}</span>`
+            ? `<span class="k">推定期待値</span><span class="v ${x.evEst >= 1 ? "ev-ok" : "ev-ng"}">${x.evEst.toFixed(2)}</span>`
             : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
+      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割っています。当たる回数を支えるために買う1点で、
+        この点だけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
-        <tr><th>買い目</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
+        <tr><th>買い目</th><th>金額</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
         ${x.points.map(pt => `<tr>
           <td class="mono">${escapeHtml(pt.combo)}</td>
+          <td class="mono yen">${yen(pt.yen != null ? pt.yen : x.unit)}</td>
           <td class="mono">${(pt.hit*100).toFixed(1)}%</td>
           <td class="mono need">${pt.needOdds.toFixed(1)}倍〜</td>
           <td class="mono need">${pt.ev != null ? pt.ev.toFixed(2) : "—"}</td>
         </tr>`).join("")}
       </table>
-      <div class="hint">実際のオッズが必要オッズを下回る点は外してください（1点ごとの損益分岐です）。</div>` : ""}
+      <div class="hint">金額は点ごとに変えてあります（資金がいちばん速く増える割合に比例）。
+        実際のオッズが必要オッズを下回る点は、その点だけ外してください。</div>` : ""}
       <div class="hint">${escapeHtml(x.memo)}</div>
-      <div class="money">1点 <b>${yen(x.unit)}</b> ／ 計 <b>${yen(x.total)}</b></div>
+      <div class="money">${x.combos.length > 1 ? "" : "1点 "}<b>${yen(x.total)}</b>${x.combos.length > 1 ? " ／ " + x.combos.length + "点" : ""}</div>
     </div>`).join("")
     : `<p class="empty">このレースは買いません。資金を次のレースに残してください。</p>`;
 
@@ -497,7 +530,11 @@ function run(){
                "実際のオッズが確認できるなら、必要オッズを下回る点はその点だけ外してください。");
   }
   const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
-  if(cutN) notes.push(`推定期待値が1.0を割る ${cutN}点 は、はじめから外してあります。`);
+  if(cutN) notes.push(`割の合わない ${cutN}点 は、はじめから外してあります。`);
+  if(bets.length && !r.sanrenpuku && !r.sanrentan){
+    notes.push("三連複・三連単は出していません。控除率が高いうえ推定の誤差も大きく、" +
+               "検証では的中率でも回収率でも複勝・ワイドに負けたためです。買う場合は上のチェックを入れてください。");
+  }
   $("droppedNote").textContent = notes.join(" ");
 
   lastRun = {race: r, rows: rows, bets: bets, grade: grade, upset: upset};
@@ -679,6 +716,7 @@ function loadSample(){
 }
 
 /* ---------- イベント ---------- */
+$("policy").addEventListener("change", syncPolicyNote);
 $("track").addEventListener("change", syncTrackUI);
 $("surface").addEventListener("change", syncTrackUI);
 $("course").addEventListener("change", syncTrackUI);
@@ -826,6 +864,7 @@ $("importFile").addEventListener("change", e => {
 /* ---------- 初期表示 ---------- */
 buildTrackSelect();
 syncTrackUI();
+syncPolicyNote();
 addHorses(6);
 
 /* ============================================================

@@ -130,7 +130,20 @@
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
+      <label class="field">買い方
+        <select id="policy">
+          <option value="value">回収率重視</option>
+          <option value="balance" selected>バランス</option>
+          <option value="hit">的中率重視</option>
+        </select>
+      </label>
     </div>
+    <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
+    <p class="hint" style="margin:6px 0 0">
+      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
+      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
+      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
+    </p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
@@ -289,6 +302,7 @@
     </p>
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
+    <div class="hitchance" id="hitChance" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 

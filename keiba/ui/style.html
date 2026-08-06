@@ -380,6 +380,29 @@ label.chk input{width:16px;height:16px;accent-color:var(--red);}
 .pt-table td{padding:2px 6px;border-top:1px solid var(--line);}
 .pt-table td.need{font-weight:700;color:var(--ink);text-align:right;}
 .pt-table th:last-child{text-align:right;}
+.pt-table td.yen{text-align:right;color:var(--ink);font-weight:700;}
+
+/* 買い方の説明・想定的中率 */
+.policy-note{color:var(--ink);}
+label.inline{display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-weight:700;}
+label.inline input{margin:0;}
+.warn-mini{color:var(--ink-soft);}
+.hitchance{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--turf);background:var(--turf-tint);
+  border-radius:12px;padding:9px 13px;margin-bottom:10px;
+}
+.hitchance .hc-k{font-size:.76rem;font-weight:800;color:var(--turf);letter-spacing:.03em;}
+.hitchance .hc-v{font-size:1.25rem;font-weight:800;color:var(--turf);
+  font-variant-numeric:tabular-nums;}
+.hitchance .hc-p{margin-left:auto;font-size:.72rem;color:var(--ink-soft);font-weight:700;}
+.hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
+.odds-need .v.ev-ng{color:var(--red);}
+.under-ev{
+  font-size:.72rem;line-height:1.6;color:var(--red);
+  background:var(--red-tint);border:1px solid var(--red-line);
+  border-radius:9px;padding:7px 9px;
+}
 
 /* ---------- Bets ---------- */
 .bets{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}

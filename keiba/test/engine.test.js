@@ -399,7 +399,7 @@ t("割が良ければ、期待値の低い本命を含む組み合わせも買�
      プラスになりうる。しかも的中率がいちばん高い。 */
   const rows = E.analyze(race({condition:2}), lively(12));
   const fav = rows.slice().sort((x, y) => x.h.odds - y.h.odds)[0];
-  const {bets} = E.buildBets(rows, 20000);
+  const {bets} = E.buildBets(rows, 20000, {policy:"value"});
   const all = [];
   bets.filter(b => b.evKnown == null).forEach(b => b.points.forEach(pt => all.push(pt)));
   // 本命を含む点があるなら、それは推定期待値が1以上であること
@@ -511,7 +511,25 @@ t("市場より高く見ているほど推定期待値が上がる", () => {
   const b = E.comboEv(0.05, 0.05, "sanrentan");
   const c = E.comboEv(0.02, 0.05, "sanrentan");
   assert.ok(a > b && b > c, `${a} > ${b} > ${c}`);
-  assert.ok(Math.abs(a - 2 * b) < 1e-12, "比に比例していない");
+  // 比をそのまま掛けるのではなく λ 乗して縮めるので、2倍にはならない
+  assert.ok(a < 2 * b, "比をそのまま信じてしまっている（縮めていない）");
+  assert.ok(Math.abs(b - (1 - E.TAKEOUT.sanrentan)) < 1e-12,
+    "市場と同じ見立てなら、控除率のぶんちょうど負けるはず");
+  assert.ok(E.RELIABILITY.tan === 1, "単勝は実測オッズなので縮めない");
+  assert.ok(E.RELIABILITY.sanrentan < E.RELIABILITY.umaren,
+    "着順まで当てる券種ほど強く縮めるはず");
+});
+
+t("推定期待値が同じなら、当たりやすいほうが資金は速く増える", () => {
+  // 盛岡12Rで実際に起きていた取りこぼし。期待値では 3-11 が上だが、
+  // 資金の増え方では 4-11 が上に来る（＝こちらを買う）。
+  const a = E.growth(0.107, 1.53);
+  const b = E.growth(0.021, 3.67);
+  assert.ok(a > b, `4-11(${a.toFixed(4)}) が 3-11(${b.toFixed(4)}) より下`);
+  assert.strictEqual(E.growth(0.1, 0.9), 0, "期待値1未満は増えないので0");
+  assert.strictEqual(E.kellyFraction(0.1, 0.9), 0, "期待値1未満には賭けない");
+  // 当たりにくい大穴は自動的に後ろへ下がる
+  assert.ok(E.growth(0.0005, 3.0) < E.growth(0.107, 1.53) / 10, "大穴が沈んでいない");
 });
 
 t("三連単の控除率がいちばん高い", () => {
@@ -524,16 +542,38 @@ t("市場の確率が0なら0を返す（0除算にしない）", () => {
   assert.strictEqual(E.comboEv(0.1, 0, "umaren"), 0);
 });
 
-t("推定期待値が1を割る点は、はじめから外す", () => {
+t("回収率重視では、推定期待値が1を割る点を1つも買わない", () => {
   const rows = E.analyze(race(), lively(12));
-  const {bets} = E.buildBets(rows, 20000);
-  bets.filter(b => b.evKnown == null).forEach(b => {
-    b.points.forEach(pt => {
+  const {bets} = E.buildBets(rows, 20000, {policy:"value"});
+  bets.forEach(b => {
+    (b.points || []).forEach(pt => {
       if(pt.ev == null) return;
       assert.ok(pt.ev >= 1.0, `${b.name} ${pt.combo} の推定期待値が ${pt.ev.toFixed(2)}`);
     });
-    assert.ok(typeof b.cut === "number", b.name + " に外した点数が記録されていない");
+    assert.ok(!b.underEv, b.name + " が期待値1割れの印を持っている");
   });
+});
+
+t("期待値1割れを買うのは複勝だけで、必ず印が付く", () => {
+  ["balance", "hit"].forEach(key => {
+    const rows = E.analyze(race(), lively(12));
+    const {bets} = E.buildBets(rows, 20000, {policy:key});
+    bets.forEach(b => {
+      const under = (b.points || []).some(pt => pt.ev != null && pt.ev < 1.0);
+      if(!under) return;
+      assert.strictEqual(b.kind, "fuku", `${key}: ${b.name} が期待値1割れで買われている`);
+      assert.ok(b.underEv, `${key}: ${b.name} に印が付いていない`);
+    });
+  });
+});
+
+t("券種には的中判定用の種別が付いている", () => {
+  const rows = E.analyze(race({condition:2}), lively(14));
+  const {bets} = E.buildBets(rows, 30000,
+    {policy:"balance", extras:{sanrenpuku:true, sanrentan:true}});
+  const known = ["tan","fuku","umaren","wide","sanrenpuku","sanrentan"];
+  bets.forEach(b => assert.ok(known.indexOf(b.kind) >= 0,
+    `${b.name} の種別が不明: ${b.kind}`));
 });
 
 t("券種の推定期待値は、1点ごとの平均になる", () => {
@@ -775,23 +815,30 @@ t("荒れるレースでは単勝の比重を下げ、面で取る券種に回�
   };
   assert.ok(share(storm, "単勝") < share(calm, "単勝"),
     `単勝の比重が下がっていない: ${share(calm,"単勝").toFixed(2)} → ${share(storm,"単勝").toFixed(2)}`);
-  assert.ok(!calm.bets.some(x => x.name.indexOf("三連複") >= 0),
-    "堅いレースで三連複を出している");
-  assert.ok(storm.bets.some(x => x.name.indexOf("三連複") >= 0),
-    "荒れるレースで三連複を出していない");
   // 荒れるレースは候補も点数も広げる
-  const nagashi = storm.bets.find(x => x.name === "馬連");
-  const calmNa  = calm.bets.find(x => x.name === "馬連");
-  assert.ok(nagashi, "馬連が無い: " + storm.bets.map(x=>x.name).join(","));
+  const wide = storm.bets.find(x => x.name === "ワイド");
+  const calmW = calm.bets.find(x => x.name === "ワイド");
+  assert.ok(wide, "ワイドが無い: " + storm.bets.map(x=>x.name).join(","));
   assert.ok(storm.upset.width === 5, "候補の広さが5でない: " + storm.upset.width);
-  if(calmNa) assert.ok(nagashi.combos.length >= calmNa.combos.length,
-    `荒れるレースで点数が増えていない: ${calmNa.combos.length} → ${nagashi.combos.length}`);
+  if(calmW) assert.ok(wide.combos.length + wide.cut >= calmW.combos.length + calmW.cut,
+    `荒れるレースで候補が増えていない: ${calmW.combos.length} → ${wide.combos.length}`);
+});
+
+t("三連複・三連単は、明示して初めて出る", () => {
+  const rows = E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4}));
+  const off = E.buildBets(rows, 30000);
+  assert.ok(!off.bets.some(x => x.kind === "sanrenpuku" || x.kind === "sanrentan"),
+    "指定していないのに三連複・三連単が出ている: " + off.bets.map(x=>x.name).join(","));
+  const on = E.buildBets(rows, 30000, {extras:{sanrenpuku:true, sanrentan:true}});
+  assert.ok(on.bets.some(x => x.kind === "sanrenpuku"), "指定しても三連複が出ない");
 });
 
 t("荒れるレースでも、必要オッズは点数に応じて上がる", () => {
   // 手広く流せば当たりやすくなるが、必要オッズも上がる。それを隠さない。
-  const storm = E.buildBets(E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})), 20000);
+  const storm = E.buildBets(E.analyze(race({track:"nakayama", condition:3}), rough(16, {nige:4})),
+                            20000, {extras:{sanrenpuku:true}});
   const tri = storm.bets.find(x => x.name === "三連複");
+  assert.ok(tri, "三連複が無い: " + storm.bets.map(x=>x.name).join(","));
   assert.ok(tri.combos.length + tri.cut >= 6,
     `三連複の候補: ${tri.combos.length} + 外した${tri.cut}`);
   assert.ok(Math.abs(tri.needOdds - tri.combos.length / tri.hit) < 1e-9);
