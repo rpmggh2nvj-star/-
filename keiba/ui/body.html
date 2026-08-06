@@ -127,6 +127,17 @@
           <option value="slow">スロー</option>
         </select>
       </label>
+      <label class="field">資金の総額 (円)
+        <input type="number" id="bankroll" value="0" min="0" step="10000" placeholder="使わないなら0">
+      </label>
+      <label class="field">1レースに使う割合
+        <select id="stakePct">
+          <option value="1">資金の1%</option>
+          <option value="2" selected>資金の2%</option>
+          <option value="3">資金の3%</option>
+          <option value="5">資金の5%</option>
+        </select>
+      </label>
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
@@ -329,6 +340,7 @@
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
     <div class="hitchance" id="hitChance" hidden></div>
+    <div class="bankplan" id="bankPlan" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 

@@ -79,12 +79,36 @@ function race(){
     distance: numOr($("distance").value, 1800),
     condition: numOr($("condition").value, 0),
     pace: $("pace").value,
-    budget: numOr($("budget").value, 5000),
+    budget: budgetOf(),
+    bankroll: numOr($("bankroll").value, 0),
+    stakePct: numOr($("stakePct").value, 2),
     policy: $("policy").value,
     sanrenpuku: $("useSanrenpuku").checked,
     sanrentan: $("useSanrentan").checked
   };
 }
+/* ---------- 1レースに使う額 ----------
+   資金の総額を入れてあれば、その割合で決める。金額で決め打ちすると、
+   外れ続けたときに賭け金だけが変わらず残り、そのまま資金が尽きる。
+   割合で決めれば、負けるほど賭け金も小さくなるので0にはならない。 */
+function budgetOf(){
+  const bank = numOr($("bankroll").value, 0);
+  if(bank >= 1000){
+    const pct = numOr($("stakePct").value, 2);
+    return Math.max(100, Math.floor(bank * pct / 100 / 100) * 100);
+  }
+  return numOr($("budget").value, 5000);
+}
+
+/* 資金を入れているときは、予算欄は「そこから決まる値」を映すだけにする */
+function syncBankroll(){
+  const bank = numOr($("bankroll").value, 0);
+  const on = bank >= 1000;
+  $("budget").readOnly = on;
+  $("budget").classList.toggle("derived", on);
+  if(on) $("budget").value = budgetOf();
+}
+
 function applyRace(r){
   if(!r) return;
   if(r.track && E.TRACKS[r.track]) $("track").value = r.track;
@@ -95,6 +119,9 @@ function applyRace(r){
   if(r.condition != null) $("condition").value = r.condition;
   if(r.pace) $("pace").value = r.pace;
   if(r.budget != null) $("budget").value = r.budget;
+  if(r.bankroll != null) $("bankroll").value = r.bankroll;
+  if(r.stakePct != null) $("stakePct").value = r.stakePct;
+  syncBankroll();
   if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
   $("useSanrenpuku").checked = !!r.sanrenpuku;
   $("useSanrentan").checked  = !!r.sanrentan;
@@ -493,6 +520,32 @@ function run(){
       `<span class="hc-note">推定勝率から出した見込みです。実際はこれより数ポイント下がります。</span>`;
   }
 
+  /* この買い方だと、どれくらい外れ続けるのか。
+     資金を入れていれば、そのときいくら残るかまで出す。 */
+  const bp = $("bankPlan");
+  const bank = numOr($("bankroll").value, 0);
+  const pct  = numOr($("stakePct").value, 2);
+  bp.hidden = !(bets.length && hitChance > 0);
+  if(!bp.hidden){
+    const plan = E.bankrollPlan(bank >= 1000 ? bank : 0, pct, hitChance, 100);
+    const over = bank >= 1000 && plan.safePct != null && pct > plan.safePct;
+    const lines = [
+      `いまの買い目の的中率が続くとすると、<b>100レースに一度は ${plan.run}連敗</b> があります。`
+    ];
+    if(bank >= 1000){
+      lines.push(`1レース ${yen(budgetOf())}（資金 ${yen(bank)} の ${pct}%）で買うと、` +
+                 `その連敗のあと資金は <b>${yen(Math.round(plan.after))}（${Math.round(plan.afterPct*100)}%）</b> になります。`);
+      lines.push(`連敗を受けても半分を残すなら、1レースは資金の <b>${plan.safePct}%</b> までです。`);
+    } else {
+      lines.push(`資金の総額を入れると、その連敗のあといくら残るかを出します。` +
+                 `金額で決め打ちすると、外れ続けたときに賭け金だけが変わらず残り、そのまま尽きます。`);
+    }
+    bp.className = "bankplan" + (over ? " warn" : "");
+    bp.innerHTML = `<div class="bp-head">資金の保ち方</div>` +
+      lines.map(l => `<div class="bp-line">${l}</div>`).join("") +
+      (over ? `<div class="bp-warn">いまの割合（${pct}%）は上限を超えています。割合を下げてください。</div>` : "");
+  }
+
   $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
@@ -719,6 +772,8 @@ function loadSample(){
 
 /* ---------- イベント ---------- */
 $("policy").addEventListener("change", syncPolicyNote);
+$("bankroll").addEventListener("input", syncBankroll);
+$("stakePct").addEventListener("change", syncBankroll);
 $("track").addEventListener("change", syncTrackUI);
 $("surface").addEventListener("change", syncTrackUI);
 $("course").addEventListener("change", syncTrackUI);
@@ -867,6 +922,7 @@ $("importFile").addEventListener("change", e => {
 buildTrackSelect();
 syncTrackUI();
 syncPolicyNote();
+syncBankroll();
 addHorses(6);
 
 /* ============================================================

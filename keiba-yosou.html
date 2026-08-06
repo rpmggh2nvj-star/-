@@ -406,6 +406,17 @@ label.inline input{margin:0;}
 .hitchance .hc-p{margin-left:auto;font-size:.72rem;color:var(--ink-soft);font-weight:700;}
 .hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
 .odds-need .v.ev-ng{color:var(--red);}
+input.derived{background:var(--paper);color:var(--ink-soft);}
+.bankplan{
+  border:1px solid var(--line);background:var(--field);
+  border-radius:12px;padding:10px 13px;margin-bottom:10px;
+}
+.bankplan.warn{border-color:var(--red);background:var(--red-tint);}
+.bankplan .bp-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:5px;}
+.bankplan .bp-line{font-size:.78rem;line-height:1.75;}
+.bankplan .bp-line b{color:var(--turf);font-variant-numeric:tabular-nums;}
+.bankplan.warn .bp-line b{color:var(--red);}
+.bankplan .bp-warn{margin-top:6px;font-size:.75rem;font-weight:700;color:var(--red);}
 
 /* ---------- 記録から学ぶ ---------- */
 .learn-state{
@@ -730,6 +741,17 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
           <option value="slow">スロー</option>
         </select>
       </label>
+      <label class="field">資金の総額 (円)
+        <input type="number" id="bankroll" value="0" min="0" step="10000" placeholder="使わないなら0">
+      </label>
+      <label class="field">1レースに使う割合
+        <select id="stakePct">
+          <option value="1">資金の1%</option>
+          <option value="2" selected>資金の2%</option>
+          <option value="3">資金の3%</option>
+          <option value="5">資金の5%</option>
+        </select>
+      </label>
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
@@ -932,6 +954,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
     <div class="hitchance" id="hitChance" hidden></div>
+    <div class="bankplan" id="bankPlan" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 
@@ -1501,6 +1524,49 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   function fillBreakEven(r, hs, rows, tune){
     rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num, tune); });
     return rows;
+  }
+
+  /* ============================================================
+     資金の保ち方
+     ------------------------------------------------------------
+     「1レースいくら」と金額で決めていると、外れ続けたときに
+     そのまま資金が尽きる。人工のレースで測ると、持ち金10万円で
+     毎回5,000円（＝5%）を300レース続けた場合、どの買い方でも
+     6割以上がほぼ全損した。買い方の問題ではなく、賭け金の決め方の問題である。
+
+     「持ち金の何%」で決めれば、負けるほど賭け金も小さくなるので
+     資金は原理的に0にならない。減り方は緩やかになる。
+     ただし、期待値が1を割る買い方をしている限り、
+     どんな決め方をしても資金は減る。そこは取り違えないこと。
+     ============================================================ */
+
+  /* n レースのうち、いちばん長く続く「当たらない連続」の目安。
+     的中確率 h の裏（外れ確率 q＝1−h）が k 回続く並びが n 回中に
+     1回は現れる、という長さを返す。 */
+  function longestMissRun(hit, races){
+    if(!(hit > 0) || !(races > 0)) return null;
+    if(hit >= 1) return 0;
+    const q = 1 - hit;
+    const v = Math.log(Math.max(1, races * hit)) / Math.log(1 / q);
+    return Math.max(1, Math.round(v));
+  }
+
+  /* 持ち金 bank・1レースあたり pct%（0〜100）で賭けたときの見通し。
+     keep は「連敗のあとに残しておきたい割合」（既定 0.5＝半分）。 */
+  function bankrollPlan(bank, pct, hit, races, keep){
+    races = races || 100;
+    keep = keep || 0.5;
+    const run = longestMissRun(hit, races);
+    const f = Math.max(0, Math.min(100, pct)) / 100;
+    const stake = bank > 0 ? Math.max(100, Math.floor(bank * f / 100) * 100) : 0;
+    const after = run != null ? bank * Math.pow(1 - f, run) : null;
+    // 連敗を受けても keep を下回らない上限
+    const safePct = run ? (1 - Math.pow(keep, 1 / run)) * 100 : null;
+    return {
+      stake: stake, run: run, races: races,
+      after: after, afterPct: after != null && bank > 0 ? after / bank : null,
+      safePct: safePct != null ? Math.round(safePct * 10) / 10 : null
+    };
   }
 
   /* ---------- このレースを買うべきか ----------
@@ -2125,7 +2191,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
     breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
-    kellyFraction, growth, hitChance,
+    kellyFraction, growth, hitChance, longestMissRun, bankrollPlan,
     POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
@@ -3928,12 +3994,36 @@ function race(){
     distance: numOr($("distance").value, 1800),
     condition: numOr($("condition").value, 0),
     pace: $("pace").value,
-    budget: numOr($("budget").value, 5000),
+    budget: budgetOf(),
+    bankroll: numOr($("bankroll").value, 0),
+    stakePct: numOr($("stakePct").value, 2),
     policy: $("policy").value,
     sanrenpuku: $("useSanrenpuku").checked,
     sanrentan: $("useSanrentan").checked
   };
 }
+/* ---------- 1レースに使う額 ----------
+   資金の総額を入れてあれば、その割合で決める。金額で決め打ちすると、
+   外れ続けたときに賭け金だけが変わらず残り、そのまま資金が尽きる。
+   割合で決めれば、負けるほど賭け金も小さくなるので0にはならない。 */
+function budgetOf(){
+  const bank = numOr($("bankroll").value, 0);
+  if(bank >= 1000){
+    const pct = numOr($("stakePct").value, 2);
+    return Math.max(100, Math.floor(bank * pct / 100 / 100) * 100);
+  }
+  return numOr($("budget").value, 5000);
+}
+
+/* 資金を入れているときは、予算欄は「そこから決まる値」を映すだけにする */
+function syncBankroll(){
+  const bank = numOr($("bankroll").value, 0);
+  const on = bank >= 1000;
+  $("budget").readOnly = on;
+  $("budget").classList.toggle("derived", on);
+  if(on) $("budget").value = budgetOf();
+}
+
 function applyRace(r){
   if(!r) return;
   if(r.track && E.TRACKS[r.track]) $("track").value = r.track;
@@ -3944,6 +4034,9 @@ function applyRace(r){
   if(r.condition != null) $("condition").value = r.condition;
   if(r.pace) $("pace").value = r.pace;
   if(r.budget != null) $("budget").value = r.budget;
+  if(r.bankroll != null) $("bankroll").value = r.bankroll;
+  if(r.stakePct != null) $("stakePct").value = r.stakePct;
+  syncBankroll();
   if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
   $("useSanrenpuku").checked = !!r.sanrenpuku;
   $("useSanrentan").checked  = !!r.sanrentan;
@@ -4342,6 +4435,32 @@ function run(){
       `<span class="hc-note">推定勝率から出した見込みです。実際はこれより数ポイント下がります。</span>`;
   }
 
+  /* この買い方だと、どれくらい外れ続けるのか。
+     資金を入れていれば、そのときいくら残るかまで出す。 */
+  const bp = $("bankPlan");
+  const bank = numOr($("bankroll").value, 0);
+  const pct  = numOr($("stakePct").value, 2);
+  bp.hidden = !(bets.length && hitChance > 0);
+  if(!bp.hidden){
+    const plan = E.bankrollPlan(bank >= 1000 ? bank : 0, pct, hitChance, 100);
+    const over = bank >= 1000 && plan.safePct != null && pct > plan.safePct;
+    const lines = [
+      `いまの買い目の的中率が続くとすると、<b>100レースに一度は ${plan.run}連敗</b> があります。`
+    ];
+    if(bank >= 1000){
+      lines.push(`1レース ${yen(budgetOf())}（資金 ${yen(bank)} の ${pct}%）で買うと、` +
+                 `その連敗のあと資金は <b>${yen(Math.round(plan.after))}（${Math.round(plan.afterPct*100)}%）</b> になります。`);
+      lines.push(`連敗を受けても半分を残すなら、1レースは資金の <b>${plan.safePct}%</b> までです。`);
+    } else {
+      lines.push(`資金の総額を入れると、その連敗のあといくら残るかを出します。` +
+                 `金額で決め打ちすると、外れ続けたときに賭け金だけが変わらず残り、そのまま尽きます。`);
+    }
+    bp.className = "bankplan" + (over ? " warn" : "");
+    bp.innerHTML = `<div class="bp-head">資金の保ち方</div>` +
+      lines.map(l => `<div class="bp-line">${l}</div>`).join("") +
+      (over ? `<div class="bp-warn">いまの割合（${pct}%）は上限を超えています。割合を下げてください。</div>` : "");
+  }
+
   $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
@@ -4568,6 +4687,8 @@ function loadSample(){
 
 /* ---------- イベント ---------- */
 $("policy").addEventListener("change", syncPolicyNote);
+$("bankroll").addEventListener("input", syncBankroll);
+$("stakePct").addEventListener("change", syncBankroll);
 $("track").addEventListener("change", syncTrackUI);
 $("surface").addEventListener("change", syncTrackUI);
 $("course").addEventListener("change", syncTrackUI);
@@ -4716,6 +4837,7 @@ $("importFile").addEventListener("change", e => {
 buildTrackSelect();
 syncTrackUI();
 syncPolicyNote();
+syncBankroll();
 addHorses(6);
 
 /* ============================================================

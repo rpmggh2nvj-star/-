@@ -585,6 +585,55 @@ t("券種の推定期待値は、1点ごとの平均になる", () => {
   });
 });
 
+console.log("\n■ 資金の保ち方");
+
+t("当たらない連続の長さは、的中率が低いほど長くなる", () => {
+  const a = E.longestMissRun(0.35, 100);
+  const b = E.longestMissRun(0.65, 100);
+  const c = E.longestMissRun(0.90, 100);
+  assert.ok(a > b && b > c, `${a} > ${b} > ${c} になっていない`);
+  // レース数が増えれば、いちばん長い連敗も伸びる
+  assert.ok(E.longestMissRun(0.35, 300) >= a);
+  assert.strictEqual(E.longestMissRun(0, 100), null, "的中率0は出せないはず");
+  assert.strictEqual(E.longestMissRun(1, 100), 0, "必ず当たるなら連敗は0");
+  assert.strictEqual(E.longestMissRun(0.5, 0), null);
+});
+
+t("資金の割合で買えば、連敗しても0にはならない", () => {
+  const p = E.bankrollPlan(100000, 2, 0.35, 100);
+  assert.ok(p.stake === 2000, "1レースの額が合わない: " + p.stake);
+  assert.ok(p.after > 0, "連敗で0になっている");
+  assert.ok(p.after < 100000, "減っていない");
+  assert.ok(p.afterPct > 0.5 && p.afterPct < 1, "残りの割合が変: " + p.afterPct);
+});
+
+t("割合を上げるほど、連敗のあとの残りは減る", () => {
+  const lo = E.bankrollPlan(100000, 1, 0.35, 100);
+  const hi = E.bankrollPlan(100000, 5, 0.35, 100);
+  assert.ok(hi.after < lo.after, `5%(${hi.after}) が 1%(${lo.after}) より多い`);
+  assert.strictEqual(lo.run, hi.run, "連敗の長さは賭け金で変わらないはず");
+});
+
+t("「半分を残す上限」を守れば、連敗しても半分は残る", () => {
+  [0.20, 0.35, 0.65, 0.90].forEach(h => {
+    const p = E.bankrollPlan(100000, 2, h, 100);
+    const at = E.bankrollPlan(100000, p.safePct, h, 100);
+    assert.ok(at.afterPct >= 0.499, `的中${h}: 上限 ${p.safePct}% でも ${at.afterPct} しか残らない`);
+    // 的中率が低いほど、賭けてよい割合は小さくなる
+    assert.ok(p.safePct > 0 && p.safePct <= 100, "上限が範囲外: " + p.safePct);
+  });
+  const low  = E.bankrollPlan(100000, 2, 0.25, 100).safePct;
+  const high = E.bankrollPlan(100000, 2, 0.80, 100).safePct;
+  assert.ok(low < high, `当たりにくいほど上限が小さくなっていない: ${low} / ${high}`);
+});
+
+t("資金を入れていなくても落ちない", () => {
+  const p = E.bankrollPlan(0, 2, 0.35, 100);
+  assert.strictEqual(p.stake, 0);
+  assert.strictEqual(p.after, 0);
+  assert.ok(p.run > 0, "連敗の目安は資金が無くても出せるはず");
+});
+
 console.log("\n■ 三連単");
 
 t("推定期待値の高い並びだけを、点数を絞って買う", () => {

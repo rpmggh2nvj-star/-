@@ -493,6 +493,49 @@
     return rows;
   }
 
+  /* ============================================================
+     資金の保ち方
+     ------------------------------------------------------------
+     「1レースいくら」と金額で決めていると、外れ続けたときに
+     そのまま資金が尽きる。人工のレースで測ると、持ち金10万円で
+     毎回5,000円（＝5%）を300レース続けた場合、どの買い方でも
+     6割以上がほぼ全損した。買い方の問題ではなく、賭け金の決め方の問題である。
+
+     「持ち金の何%」で決めれば、負けるほど賭け金も小さくなるので
+     資金は原理的に0にならない。減り方は緩やかになる。
+     ただし、期待値が1を割る買い方をしている限り、
+     どんな決め方をしても資金は減る。そこは取り違えないこと。
+     ============================================================ */
+
+  /* n レースのうち、いちばん長く続く「当たらない連続」の目安。
+     的中確率 h の裏（外れ確率 q＝1−h）が k 回続く並びが n 回中に
+     1回は現れる、という長さを返す。 */
+  function longestMissRun(hit, races){
+    if(!(hit > 0) || !(races > 0)) return null;
+    if(hit >= 1) return 0;
+    const q = 1 - hit;
+    const v = Math.log(Math.max(1, races * hit)) / Math.log(1 / q);
+    return Math.max(1, Math.round(v));
+  }
+
+  /* 持ち金 bank・1レースあたり pct%（0〜100）で賭けたときの見通し。
+     keep は「連敗のあとに残しておきたい割合」（既定 0.5＝半分）。 */
+  function bankrollPlan(bank, pct, hit, races, keep){
+    races = races || 100;
+    keep = keep || 0.5;
+    const run = longestMissRun(hit, races);
+    const f = Math.max(0, Math.min(100, pct)) / 100;
+    const stake = bank > 0 ? Math.max(100, Math.floor(bank * f / 100) * 100) : 0;
+    const after = run != null ? bank * Math.pow(1 - f, run) : null;
+    // 連敗を受けても keep を下回らない上限
+    const safePct = run ? (1 - Math.pow(keep, 1 / run)) * 100 : null;
+    return {
+      stake: stake, run: run, races: races,
+      after: after, afterPct: after != null && bank > 0 ? after / bank : null,
+      safePct: safePct != null ? Math.round(safePct * 10) / 10 : null
+    };
+  }
+
   /* ---------- このレースを買うべきか ----------
      日本の馬券は控除率が20〜25%ある。市場をなぞるだけの予想では
      買った時点で必ず負ける。買う根拠があるのは、
@@ -1115,7 +1158,7 @@
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
     breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
-    kellyFraction, growth, hitChance,
+    kellyFraction, growth, hitChance, longestMissRun, bankrollPlan,
     POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
