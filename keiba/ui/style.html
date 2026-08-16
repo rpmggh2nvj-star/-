@@ -399,6 +399,43 @@ label.inline input{margin:0;}
 .hitchance .hc-p{margin-left:auto;font-size:.72rem;color:var(--ink-soft);font-weight:700;}
 .hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
 .odds-need .v.ev-ng{color:var(--red);}
+input.derived{background:var(--paper);color:var(--ink-soft);}
+.money-box{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:11px 13px;margin-bottom:12px;
+}
+.money-box .m-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:6px;}
+.money-box .m-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:4px 0;}
+.money-box .m-row.total{border-top:1px dashed var(--line);margin-top:4px;padding-top:8px;}
+.money-box .m-k{font-size:.78rem;font-weight:700;}
+.money-box .m-v{font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums;}
+.money-box .m-v.good{color:var(--turf);}
+.money-box .m-v.mid{color:var(--ink);}
+.money-box .m-v.bad{color:var(--red);}
+.money-box .m-sub{margin-left:auto;font-size:.72rem;color:var(--ink-soft);}
+.money-box .m-line,.money-box .m-note{font-size:.75rem;line-height:1.7;color:var(--ink-soft);margin-top:6px;}
+.money-box .m-note.good{color:var(--turf);font-weight:700;}
+.money-box .m-note.bad{color:var(--red);}
+.money-box .m-note b{color:var(--red);font-variant-numeric:tabular-nums;}
+.kind-pick{
+  display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;
+  margin-top:12px;padding:9px 12px;border:1px solid var(--line);
+  border-radius:11px;background:var(--field);font-size:.78rem;
+}
+.kind-pick .kp-label{
+  font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);
+  margin-right:12px;flex:0 0 auto;
+}
+.bankplan{
+  border:1px solid var(--line);background:var(--field);
+  border-radius:12px;padding:10px 13px;margin-bottom:10px;
+}
+.bankplan.warn{border-color:var(--red);background:var(--red-tint);}
+.bankplan .bp-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:5px;}
+.bankplan .bp-line{font-size:.78rem;line-height:1.75;}
+.bankplan .bp-line b{color:var(--turf);font-variant-numeric:tabular-nums;}
+.bankplan.warn .bp-line b{color:var(--red);}
+.bankplan .bp-warn{margin-top:6px;font-size:.75rem;font-weight:700;color:var(--red);}
 
 /* ---------- 記録から学ぶ ---------- */
 .learn-state{

@@ -554,15 +554,16 @@ t("回収率重視では、推定期待値が1を割る点を1つも買わない
   });
 });
 
-t("期待値1割れを買うのは複勝だけで、必ず印が付く", () => {
-  ["balance", "hit"].forEach(key => {
+t("期待値1割れの点を買う券種には、必ず印が付く", () => {
+  ["value", "balance", "hit"].forEach(key => {
     const rows = E.analyze(race(), lively(12));
     const {bets} = E.buildBets(rows, 20000, {policy:key});
     bets.forEach(b => {
       const under = (b.points || []).some(pt => pt.ev != null && pt.ev < 1.0);
-      if(!under) return;
-      assert.strictEqual(b.kind, "fuku", `${key}: ${b.name} が期待値1割れで買われている`);
-      assert.ok(b.underEv, `${key}: ${b.name} に印が付いていない`);
+      assert.strictEqual(!!b.underEv, under,
+        `${key}: ${b.name} の印（${b.underEv}）が中身（${under}）と合っていない`);
+      // 単勝はオッズが実測値なので、期待値1割れを買うことはない
+      if(under) assert.notStrictEqual(b.kind, "tan", `${key}: 単勝で期待値1割れを買っている`);
     });
   });
 });
@@ -583,6 +584,137 @@ t("券種の推定期待値は、1点ごとの平均になる", () => {
     const avg = b.points.reduce((s, pt) => s + pt.ev, 0) / b.points.length;
     assert.ok(Math.abs(b.evEst - avg) < 1e-9, `${b.name}: ${b.evEst} と ${avg}`);
   });
+});
+
+console.log("\n■ 買う券種を選ぶ");
+
+/* 連系が確実に出るレース（材料が揃い、市場と見立てがずれる） */
+function pickRace(){
+  const race = {track:"nakayama", surface:"dirt", distance:1600,
+                condition:2, pace:"high", budget:10000};
+  const odds = [3.1,4.2,6.8,9.5,12.0,15.5,19.0,24.0,31.0,40.0,55.0,70.0,95.0,130.0];
+  const hs = [];
+  for(let i = 1; i <= 14; i++){
+    hs.push(Object.assign(E.defaultHorse(i), {
+      odds: odds[i-1],
+      last1:((i*3)%9)+1, last2:((i*5)%9)+1, last3:((i*7)%9)+1,
+      jockey:5-((i-1)%5), training:1+((i*2)%5), dist:(i+1)%4, baba:(i*3)%4,
+      kinryo:54+(i%4), wdiff:(i%9)-4,
+      style:["nige","senko","sashi","oikomi"][i%4]}));
+  }
+  return E.analyze(race, hs);
+}
+const PICK = pickRace();
+const kindsIn = out => out.bets.map(b => b.kind);
+
+t("指定しなければ、単勝・複勝・馬連・ワイドを出す", () => {
+  const k = kindsIn(E.buildBets(PICK, 10000));
+  ["tan","fuku","umaren","wide"].forEach(x =>
+    assert.ok(k.indexOf(x) >= 0, x + " が出ていない: " + k.join(",")));
+  ["sanrenpuku","sanrentan"].forEach(x =>
+    assert.ok(k.indexOf(x) < 0, x + " が既定で出ている"));
+});
+
+t("券種ごとに、出す・出さないを切り替えられる", () => {
+  ["tan","fuku","umaren","wide"].forEach(off => {
+    const k = kindsIn(E.buildBets(PICK, 10000, {kinds: {[off]: false}}));
+    assert.ok(k.indexOf(off) < 0, `${off} を外したのに出ている: ${k.join(",")}`);
+    // 外していない券種は残る
+    ["tan","fuku","umaren","wide"].filter(x => x !== off).forEach(on =>
+      assert.ok(k.indexOf(on) >= 0, `${off} を外したら ${on} まで消えた`));
+  });
+  ["sanrenpuku","sanrentan"].forEach(on => {
+    const k = kindsIn(E.buildBets(PICK, 30000, {kinds: {[on]: true}}));
+    assert.ok(k.indexOf(on) >= 0, `${on} を足したのに出ない: ${k.join(",")}`);
+  });
+});
+
+t("1券種だけに絞れる", () => {
+  const only = kind => {
+    const kinds = {};
+    Object.keys(E.KIND_LABEL).forEach(x => { kinds[x] = (x === kind); });
+    return E.buildBets(PICK, 10000, {kinds: kinds});
+  };
+  ["tan","fuku","umaren","wide"].forEach(kind => {
+    const out = only(kind);
+    assert.ok(out.bets.length, kind + " だけにすると買い目が消える");
+    out.bets.forEach(b => assert.strictEqual(b.kind, kind,
+      `${kind} だけのはずが ${b.kind} が混ざっている`));
+  });
+});
+
+t("ワイドは馬連より当たる（同じレース・同じ選び方で）", () => {
+  const only = kind => {
+    const kinds = {};
+    Object.keys(E.KIND_LABEL).forEach(x => { kinds[x] = (x === kind); });
+    return E.buildBets(PICK, 10000, {kinds: kinds});
+  };
+  const w = only("wide"), u = only("umaren");
+  assert.ok(w.hitChance > u.hitChance,
+    `ワイド ${(w.hitChance*100).toFixed(1)}% ≦ 馬連 ${(u.hitChance*100).toFixed(1)}%`);
+});
+
+t("すべて外すと、買い目も的中確率も0になる", () => {
+  const kinds = {};
+  Object.keys(E.KIND_LABEL).forEach(x => { kinds[x] = false; });
+  const out = E.buildBets(PICK, 10000, {kinds: kinds});
+  assert.strictEqual(out.bets.length, 0, "外したのに買い目がある");
+  assert.strictEqual(out.hitChance, 0);
+});
+
+t("更新前の指定（extras）でも、これまでどおり動く", () => {
+  const k = kindsIn(E.buildBets(PICK, 30000, {extras: {sanrenpuku:true}}));
+  assert.ok(k.indexOf("sanrenpuku") >= 0, "extras で三連複が出ない");
+  assert.ok(k.indexOf("tan") >= 0 && k.indexOf("wide") >= 0, "既定の券種が消えた");
+});
+
+console.log("\n■ 資金の保ち方");
+
+t("当たらない連続の長さは、的中率が低いほど長くなる", () => {
+  const a = E.longestMissRun(0.35, 100);
+  const b = E.longestMissRun(0.65, 100);
+  const c = E.longestMissRun(0.90, 100);
+  assert.ok(a > b && b > c, `${a} > ${b} > ${c} になっていない`);
+  // レース数が増えれば、いちばん長い連敗も伸びる
+  assert.ok(E.longestMissRun(0.35, 300) >= a);
+  assert.strictEqual(E.longestMissRun(0, 100), null, "的中率0は出せないはず");
+  assert.strictEqual(E.longestMissRun(1, 100), 0, "必ず当たるなら連敗は0");
+  assert.strictEqual(E.longestMissRun(0.5, 0), null);
+});
+
+t("資金の割合で買えば、連敗しても0にはならない", () => {
+  const p = E.bankrollPlan(100000, 2, 0.35, 100);
+  assert.ok(p.stake === 2000, "1レースの額が合わない: " + p.stake);
+  assert.ok(p.after > 0, "連敗で0になっている");
+  assert.ok(p.after < 100000, "減っていない");
+  assert.ok(p.afterPct > 0.5 && p.afterPct < 1, "残りの割合が変: " + p.afterPct);
+});
+
+t("割合を上げるほど、連敗のあとの残りは減る", () => {
+  const lo = E.bankrollPlan(100000, 1, 0.35, 100);
+  const hi = E.bankrollPlan(100000, 5, 0.35, 100);
+  assert.ok(hi.after < lo.after, `5%(${hi.after}) が 1%(${lo.after}) より多い`);
+  assert.strictEqual(lo.run, hi.run, "連敗の長さは賭け金で変わらないはず");
+});
+
+t("「半分を残す上限」を守れば、連敗しても半分は残る", () => {
+  [0.20, 0.35, 0.65, 0.90].forEach(h => {
+    const p = E.bankrollPlan(100000, 2, h, 100);
+    const at = E.bankrollPlan(100000, p.safePct, h, 100);
+    assert.ok(at.afterPct >= 0.499, `的中${h}: 上限 ${p.safePct}% でも ${at.afterPct} しか残らない`);
+    // 的中率が低いほど、賭けてよい割合は小さくなる
+    assert.ok(p.safePct > 0 && p.safePct <= 100, "上限が範囲外: " + p.safePct);
+  });
+  const low  = E.bankrollPlan(100000, 2, 0.25, 100).safePct;
+  const high = E.bankrollPlan(100000, 2, 0.80, 100).safePct;
+  assert.ok(low < high, `当たりにくいほど上限が小さくなっていない: ${low} / ${high}`);
+});
+
+t("資金を入れていなくても落ちない", () => {
+  const p = E.bankrollPlan(0, 2, 0.35, 100);
+  assert.strictEqual(p.stake, 0);
+  assert.strictEqual(p.after, 0);
+  assert.ok(p.run > 0, "連敗の目安は資金が無くても出せるはず");
 });
 
 console.log("\n■ 三連単");
@@ -815,6 +947,10 @@ t("荒れるレースでは単勝の比重を下げ、面で取る券種に回�
   };
   assert.ok(share(storm, "単勝") < share(calm, "単勝"),
     `単勝の比重が下がっていない: ${share(calm,"単勝").toFixed(2)} → ${share(storm,"単勝").toFixed(2)}`);
+  /* 他の券種が条件を満たさず出てこなくても、単勝だけが残って
+     比重が上がることがないよう上限を置いてある。 */
+  assert.ok(share(storm, "単勝") <= 0.30,
+    "荒れるレースで単勝の比重が高すぎる: " + share(storm, "単勝").toFixed(2));
   // 荒れるレースは候補も点数も広げる
   const wide = storm.bets.find(x => x.name === "ワイド");
   const calmW = calm.bets.find(x => x.name === "ワイド");

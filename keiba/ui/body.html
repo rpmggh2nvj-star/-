@@ -127,6 +127,17 @@
           <option value="slow">スロー</option>
         </select>
       </label>
+      <label class="field">資金の総額 (円)
+        <input type="number" id="bankroll" value="0" min="0" step="10000" placeholder="使わないなら0">
+      </label>
+      <label class="field">1レースに使う割合
+        <select id="stakePct">
+          <option value="1">資金の1%</option>
+          <option value="2" selected>資金の2%</option>
+          <option value="3">資金の3%</option>
+          <option value="5">資金の5%</option>
+        </select>
+      </label>
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
@@ -139,11 +150,16 @@
       </label>
     </div>
     <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
-    <p class="hint" style="margin:6px 0 0">
-      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
-      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
-      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
-    </p>
+    <div class="kind-pick">
+      <span class="kp-label">買う券種</span>
+      <label class="inline"><input type="checkbox" id="kindTan" checked> 単勝</label>
+      <label class="inline"><input type="checkbox" id="kindFuku" checked> 複勝</label>
+      <label class="inline"><input type="checkbox" id="kindUmaren" checked> 馬連</label>
+      <label class="inline"><input type="checkbox" id="kindWide" checked> ワイド</label>
+      <label class="inline"><input type="checkbox" id="kindSanrenpuku"> 三連複</label>
+      <label class="inline"><input type="checkbox" id="kindSanrentan"> 三連単</label>
+    </div>
+    <p class="hint" id="kindNote" style="margin:6px 0 0"></p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
@@ -276,12 +292,20 @@
         <select id="histTrack" style="width:auto"></select>
       </label>
     </div>
+    <div class="money-box" id="moneyBox" hidden></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline">目標にする回収率
+        <input type="number" id="targetRoi" value="130" min="100" max="500" step="5" style="width:5em">
+        <span>%</span>
+      </label>
+    </p>
     <div class="stat-row" id="histStats"></div>
     <div class="upset-stats" id="upsetStats"></div>
     <div id="histList"></div>
     <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
     <p class="hint" style="margin:12px 0 0">
       着順を入れると的中率が集計され、騎手評価の提案にも使われます。
+      <b>投入と払戻を入れると、回収率が出ます。</b>的中率だけでは回収率は分かりません。
       記録はこの端末にのみ保存されます（外部には送信しません）。
     </p>
   </section>
@@ -329,6 +353,7 @@
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
     <div class="hitchance" id="hitChance" hidden></div>
+    <div class="bankplan" id="bankPlan" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 

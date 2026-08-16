@@ -416,6 +416,43 @@ label.inline input{margin:0;}
 .hitchance .hc-p{margin-left:auto;font-size:.72rem;color:var(--ink-soft);font-weight:700;}
 .hitchance .hc-note{flex-basis:100%;font-size:.7rem;color:var(--ink-soft);line-height:1.5;}
 .odds-need .v.ev-ng{color:var(--red);}
+input.derived{background:var(--paper);color:var(--ink-soft);}
+.money-box{
+  border:1px solid var(--line);border-radius:12px;background:var(--field);
+  padding:11px 13px;margin-bottom:12px;
+}
+.money-box .m-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:6px;}
+.money-box .m-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:4px 0;}
+.money-box .m-row.total{border-top:1px dashed var(--line);margin-top:4px;padding-top:8px;}
+.money-box .m-k{font-size:.78rem;font-weight:700;}
+.money-box .m-v{font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums;}
+.money-box .m-v.good{color:var(--turf);}
+.money-box .m-v.mid{color:var(--ink);}
+.money-box .m-v.bad{color:var(--red);}
+.money-box .m-sub{margin-left:auto;font-size:.72rem;color:var(--ink-soft);}
+.money-box .m-line,.money-box .m-note{font-size:.75rem;line-height:1.7;color:var(--ink-soft);margin-top:6px;}
+.money-box .m-note.good{color:var(--turf);font-weight:700;}
+.money-box .m-note.bad{color:var(--red);}
+.money-box .m-note b{color:var(--red);font-variant-numeric:tabular-nums;}
+.kind-pick{
+  display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;
+  margin-top:12px;padding:9px 12px;border:1px solid var(--line);
+  border-radius:11px;background:var(--field);font-size:.78rem;
+}
+.kind-pick .kp-label{
+  font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);
+  margin-right:12px;flex:0 0 auto;
+}
+.bankplan{
+  border:1px solid var(--line);background:var(--field);
+  border-radius:12px;padding:10px 13px;margin-bottom:10px;
+}
+.bankplan.warn{border-color:var(--red);background:var(--red-tint);}
+.bankplan .bp-head{font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:5px;}
+.bankplan .bp-line{font-size:.78rem;line-height:1.75;}
+.bankplan .bp-line b{color:var(--turf);font-variant-numeric:tabular-nums;}
+.bankplan.warn .bp-line b{color:var(--red);}
+.bankplan .bp-warn{margin-top:6px;font-size:.75rem;font-weight:700;color:var(--red);}
 
 /* ---------- 記録から学ぶ ---------- */
 .learn-state{
@@ -740,6 +777,17 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
           <option value="slow">スロー</option>
         </select>
       </label>
+      <label class="field">資金の総額 (円)
+        <input type="number" id="bankroll" value="0" min="0" step="10000" placeholder="使わないなら0">
+      </label>
+      <label class="field">1レースに使う割合
+        <select id="stakePct">
+          <option value="1">資金の1%</option>
+          <option value="2" selected>資金の2%</option>
+          <option value="3">資金の3%</option>
+          <option value="5">資金の5%</option>
+        </select>
+      </label>
       <label class="field">予算 (円)
         <input type="number" id="budget" value="5000" min="100" step="500">
       </label>
@@ -752,11 +800,16 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
       </label>
     </div>
     <p class="hint policy-note" id="policyNote" style="margin:10px 0 0"></p>
-    <p class="hint" style="margin:6px 0 0">
-      <label class="inline"><input type="checkbox" id="useSanrenpuku"> 三連複も買う</label>
-      <label class="inline"><input type="checkbox" id="useSanrentan"> 三連単も買う</label>
-      <span class="warn-mini">どちらも控除率が高く、推定の誤差も大きい券種です。既定では出しません。</span>
-    </p>
+    <div class="kind-pick">
+      <span class="kp-label">買う券種</span>
+      <label class="inline"><input type="checkbox" id="kindTan" checked> 単勝</label>
+      <label class="inline"><input type="checkbox" id="kindFuku" checked> 複勝</label>
+      <label class="inline"><input type="checkbox" id="kindUmaren" checked> 馬連</label>
+      <label class="inline"><input type="checkbox" id="kindWide" checked> ワイド</label>
+      <label class="inline"><input type="checkbox" id="kindSanrenpuku"> 三連複</label>
+      <label class="inline"><input type="checkbox" id="kindSanrentan"> 三連単</label>
+    </div>
+    <p class="hint" id="kindNote" style="margin:6px 0 0"></p>
     <p class="hint" style="margin:10px 0 0">
       <span id="trackNote"></span>
       <button type="button" class="ghost" id="btnAutoPace" style="padding:2px 8px;font-size:.74rem">ペース自動判定</button>
@@ -889,12 +942,20 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
         <select id="histTrack" style="width:auto"></select>
       </label>
     </div>
+    <div class="money-box" id="moneyBox" hidden></div>
+    <p class="hint" style="margin:8px 0 0">
+      <label class="inline">目標にする回収率
+        <input type="number" id="targetRoi" value="130" min="100" max="500" step="5" style="width:5em">
+        <span>%</span>
+      </label>
+    </p>
     <div class="stat-row" id="histStats"></div>
     <div class="upset-stats" id="upsetStats"></div>
     <div id="histList"></div>
     <p class="empty" id="histEmpty">まだ記録がありません。予想したあと「この予想を記録する」を押すと残ります。</p>
     <p class="hint" style="margin:12px 0 0">
       着順を入れると的中率が集計され、騎手評価の提案にも使われます。
+      <b>投入と払戻を入れると、回収率が出ます。</b>的中率だけでは回収率は分かりません。
       記録はこの端末にのみ保存されます（外部には送信しません）。
     </p>
   </section>
@@ -942,6 +1003,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);}
 
     <div class="panel-head" style="margin-top:22px"><h2>推奨買い目</h2><span class="hint" id="budgetLabel"></span></div>
     <div class="hitchance" id="hitChance" hidden></div>
+    <div class="bankplan" id="bankPlan" hidden></div>
     <div class="bets" id="betList"></div>
     <p class="hint" id="droppedNote" style="margin:8px 2px 0"></p>
 
@@ -1466,6 +1528,39 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     return Math.max(100, Math.floor(total / points / 100) * 100);
   }
 
+  /* ---------- 1点ごとの金額を配る ----------
+     share 円を重み w に比例して100円単位で配る。合計は share を超えない。
+
+     素朴に「share × 比率」を100円に丸めると、比率の小さい点まで
+     最低100円が要るぶん合計が share を上回る。以前はこの超過を
+     「券種ごと落とす」ことで吸収していたため、利用者が選んだ馬連が
+     黙って消えることがあった。券種を落とすのではなく点数を減らす。
+
+     手順は、まず全点に100円ずつ置き、残りを比率で配る（最大剰余法）。
+     全点に100円すら置けないときは、重みの大きい点から置ける数だけ残す。 */
+  function allocate(share, weights){
+    const slots = Math.floor(share / 100);
+    const n = weights.length;
+    if(!(slots > 0) || !n) return null;
+
+    let idx = weights.map((v, i) => i);
+    if(slots < n){
+      idx = idx.slice().sort((a, b) => weights[b] - weights[a]).slice(0, slots)
+               .sort((a, b) => a - b);
+    }
+    const m = idx.length;
+    const w = idx.map(i => Math.max(0, weights[i]));
+    const sum = w.reduce((a, b) => a + b, 0);
+    const extra = slots - m;                       // 100円ずつ置いた残り
+    const base = w.map(v => sum > 0 ? extra * v / sum : extra / m);
+    const add = base.map(v => Math.floor(v));
+    let used = add.reduce((a, b) => a + b, 0);
+    const rest = base.map((v, i) => ({i: i, r: v - add[i]}))
+                     .sort((a, b) => b.r - a.r);
+    for(let k = 0; used < extra; k++, used++) add[rest[k % m].i]++;
+    return {keep: idx, units: add.map(v => (v + 1) * 100)};
+  }
+
   /* ============================================================
      買い下限オッズ
      ------------------------------------------------------------
@@ -1511,6 +1606,49 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
   function fillBreakEven(r, hs, rows, tune){
     rows.forEach(x => { x.minOdds = breakEvenOdds(r, hs, x.h.num, tune); });
     return rows;
+  }
+
+  /* ============================================================
+     資金の保ち方
+     ------------------------------------------------------------
+     「1レースいくら」と金額で決めていると、外れ続けたときに
+     そのまま資金が尽きる。人工のレースで測ると、持ち金10万円で
+     毎回5,000円（＝5%）を300レース続けた場合、どの買い方でも
+     6割以上がほぼ全損した。買い方の問題ではなく、賭け金の決め方の問題である。
+
+     「持ち金の何%」で決めれば、負けるほど賭け金も小さくなるので
+     資金は原理的に0にならない。減り方は緩やかになる。
+     ただし、期待値が1を割る買い方をしている限り、
+     どんな決め方をしても資金は減る。そこは取り違えないこと。
+     ============================================================ */
+
+  /* n レースのうち、いちばん長く続く「当たらない連続」の目安。
+     的中確率 h の裏（外れ確率 q＝1−h）が k 回続く並びが n 回中に
+     1回は現れる、という長さを返す。 */
+  function longestMissRun(hit, races){
+    if(!(hit > 0) || !(races > 0)) return null;
+    if(hit >= 1) return 0;
+    const q = 1 - hit;
+    const v = Math.log(Math.max(1, races * hit)) / Math.log(1 / q);
+    return Math.max(1, Math.round(v));
+  }
+
+  /* 持ち金 bank・1レースあたり pct%（0〜100）で賭けたときの見通し。
+     keep は「連敗のあとに残しておきたい割合」（既定 0.5＝半分）。 */
+  function bankrollPlan(bank, pct, hit, races, keep){
+    races = races || 100;
+    keep = keep || 0.5;
+    const run = longestMissRun(hit, races);
+    const f = Math.max(0, Math.min(100, pct)) / 100;
+    const stake = bank > 0 ? Math.max(100, Math.floor(bank * f / 100) * 100) : 0;
+    const after = run != null ? bank * Math.pow(1 - f, run) : null;
+    // 連敗を受けても keep を下回らない上限
+    const safePct = run ? (1 - Math.pow(keep, 1 / run)) * 100 : null;
+    return {
+      stake: stake, run: run, races: races,
+      after: after, afterPct: after != null && bank > 0 ? after / bank : null,
+      safePct: safePct != null ? Math.round(safePct * 10) / 10 : null
+    };
   }
 
   /* ---------- このレースを買うべきか ----------
@@ -1691,6 +1829,23 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
       }
     }
   };
+  /* ---------- 券種ごとの性質 ----------
+     「ワイドは馬連の3倍の回収率が見込める」と言われることがあるが、
+     3倍になるのは回収率ではなく的中率である。同じ上位3頭のBOXで
+     券種だけを変えて6000レース測ると、こうなった。
+
+       馬連 3点BOX  … レース的中 22.8%  回収率 75.3%
+       ワイド 3点BOX … レース的中 47.4%  回収率 76.2%
+       馬連 上位2頭1点 … 的中 10.5%  回収率 78.3%
+       ワイド 上位2頭1点 … 的中 25.3%  回収率 77.7%
+
+     的中率は2〜3倍になるが、回収率はほぼ同じところへ寄る。
+     控除率が馬連もワイドも 22.5% で同じだからで、
+     長く買えば平均的な買い手の取り分は 77.5% に近づく。
+     もし回収率が3倍（＝232%）なら主催者が赤字になるので、
+     仕組みの上でありえない。 */
+  const KIND_LABEL = {tan:"単勝", fuku:"複勝", umaren:"馬連", wide:"ワイド",
+                      sanrenpuku:"三連複", sanrentan:"三連単"};
   const POLICY_KEYS = ["value", "balance", "hit"];
   const POLICY_DEFAULT = "balance";
   function policyOf(key){ return POLICIES[key] || POLICIES[POLICY_DEFAULT]; }
@@ -1763,10 +1918,21 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
          必要オッズ = 点数 ÷ 的中確率の合計
 
      で決まる。実際のオッズがこれを下回るなら、その買い目は見送るべきである。 */
+  /* 買う券種。方針が既定で使うものに、利用者が明示した分を足し引きする。
+     opt.kinds で明示されていればそれが優先。何も指定がなければ従来どおり
+     （方針の kinds ＋ opt.extras）になる。 */
+  const ALWAYS_ON = {tan: true, fuku: true};   // 単勝・複勝は明示して切らない限り出す
+  function kindOn(pol, opt, kind){
+    if(opt.kinds && opt.kinds[kind] != null) return !!opt.kinds[kind];
+    if(ALWAYS_ON[kind]) return true;
+    if(pol.kinds && pol.kinds[kind]) return true;
+    return !!(opt.extras && opt.extras[kind]);
+  }
+
   function buildBets(rows, budget, opt){
     opt = opt || {};
     const pol = policyOf(opt.policy);
-    const extras = opt.extras || {};       // {sanrenpuku:true, sanrentan:true}
+    const use = (kind) => kindOn(pol, opt, kind);
     const grade = raceGrade(rows);
     if(grade.grade === "skip"){
       return {bets: [], value: null, dropped: [], grade: grade, policy: pol,
@@ -1789,6 +1955,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     const push = (o) => {
       if(!o.combos.length) return;
       if(o.cut == null) o.cut = 0;      // 候補から外した点数（無ければ0）
+      o.all = o.combos.slice();         // 予算で削る前の全点（配分の元になる）
       bets.push(o);
     };
     const need = (hit, points) => (hit > 0 ? points / hit : Infinity);
@@ -1814,7 +1981,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        単勝だけは実際のオッズから期待値をそのまま計算できる（推定ではない）。
        だから期待値1.0未満は買わない。ただし選ぶ順は期待値ではなく
        資金の増え方にする。期待値順だと、勝ち目の薄い人気薄が上に来てしまう。 */
-    const tan = rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV)
+    const tan = (use("tan") ? rows.filter(x => x.prob >= 0.04 && x.ev >= BUY_EV) : [])
                     .sort((x, y) => growth(y.prob, y.ev) - growth(x.prob, x.ev))
                     .slice(0, 2);
     tan.forEach((x, k) => {
@@ -1835,7 +2002,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        以前は「3着以内50%以上かつ期待値1.0以上」という条件で1頭だけ選んでいた。
        この条件はほとんどのレースで誰も通らず、いちばん当たる券種が
        3レースに1回しか出ていなかった。 */
-    const places = placePositions(n);
+    const places = use("fuku") ? placePositions(n) : 0;
     if(places){
       const cands = rows.map(x => {
         const i = idx[x.h.num];
@@ -1861,7 +2028,6 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
            .slice(0, pol.fukuValue).forEach(o => takeN.push(o));
       takeN.forEach((o, k) => {
         push({name: `複勝（${places}着まで）` + (k ? `（${k+1}頭目）` : ""),
-              underEv: o.ev < BUY_EV,
               kind: "fuku", prio: 90 - k, ratio: (k ? 0.10 : 0.16) * pol.tanScale,
               combos: [String(o.x.h.num)], hit: o.hit, needOdds: need(o.hit, 1),
               evEst: o.ev,
@@ -1940,7 +2106,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     // 荒れるレースは相手を広げる（ただし投入額は upset.stakeScale で絞る）
     const spread = up.level === "high" ? 2 : up.level === "mid" ? 1 : 0;
     const opts = (kind) => {
-      const o = pol.kinds[kind] || EXTRA_KINDS[kind];
+      if(!use(kind)) return null;
+      const o = (pol.kinds && pol.kinds[kind]) || EXTRA_KINDS[kind];
       if(!o) return null;
       return Object.assign({}, o, {
         max: o.max + spread,
@@ -1976,7 +2143,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     }
 
     // --- 馬連（1・2着の組。順不同） ---
-    if(opts("umaren")){
+    if(n >= 3 && opts("umaren")){
       shape(selectPoints(pairAll("umaren", quinellaProb), opts("umaren")),
             "馬連", "umaren", 70, opts("umaren").ratio, "資金の増え方で選んだ組み合わせ");
     }
@@ -1985,7 +2152,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
        控除率25%。推定の誤差も大きく、人工のレースでは上位4頭BOXでも
        的中15%・回収60%と、複勝・ワイドに両方の指標で負けた。
        既定では出さない。明示的に指定されたときだけ、荒れるレースに限って出す。 */
-    if(n >= 4 && extras.sanrenpuku && up.level !== "low"){
+    if(n >= 4 && opts("sanrenpuku")){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = x+1; y < cand.length; y++)
@@ -2001,7 +2168,7 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     /* --- 三連単（着順まで当てる） ---
        控除率27.5%と最も高く、推定は Harville の仮定にいちばん強く依存する。
        人工のレースでは上位3頭BOXで的中6%・回収44%。既定では出さない。 */
-    if(n >= 4 && extras.sanrentan){
+    if(n >= 4 && opts("sanrentan")){
       const all = [];
       for(let x = 0; x < cand.length; x++)
         for(let y = 0; y < cand.length; y++)
@@ -2016,7 +2183,14 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
             g.kept.length ? `資金の増え方で選んだ並び（最良 ${g.kept[0].combo} で推定期待値 ${g.kept[0].ev.toFixed(2)}）` : "");
     }
 
-    /* 券種としての推定期待値。同額で買うので、1点ごとの期待値の平均になる。 */
+    /* 推定期待値が1.0を割る点を含む券種には印を付ける。
+       買い方によっては当たる回数を支えるためにそれを買うが、
+       買っていることは必ず画面に出す。 */
+    bets.forEach(b => {
+      b.underEv = (b.points || []).some(pt => pt.ev != null && pt.ev < BUY_EV);
+    });
+
+    /* 券種としての推定期待値。1点ごとの期待値の平均になる。 */
     bets.forEach(b => {
       if(b.evEst != null || b.evKnown != null) return;
       const es = (b.points || []).map(pt => pt.ev).filter(v => v != null);
@@ -2034,30 +2208,49 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     /* 1点ごとの金額。同額で並べるのではなく、資金がいちばん速く増える割合
        （Kelly の f）に比例させる。同じ予算でも、当たりやすく割の良い点に
        厚く乗るので、当たったときの取り返しが大きくなる。 */
+    /* 荒れるレースでは単勝の比重を必ず下げる。
+       比率だけ下げても、他の券種が条件を満たさず出てこなかった場合に
+       単勝だけが残って比重が上がってしまう。上限を置いて確実に下げる。 */
+    const capTan = up.level === "high" ? 0.25 : up.level === "mid" ? 0.35 : 1;
+    if(capTan < 1){
+      const tanSum   = bets.filter(x => x.kind === "tan").reduce((a, x) => a + x.ratio, 0);
+      const otherSum = bets.filter(x => x.kind !== "tan").reduce((a, x) => a + x.ratio, 0);
+      if(tanSum > 0 && otherSum > 0 && tanSum / (tanSum + otherSum) > capTan){
+        const scale = (capTan / (1 - capTan)) * otherSum / tanSum;
+        bets.forEach(x => { if(x.kind === "tan") x.ratio *= scale; });
+      }
+    }
+
     let live = bets.slice();
     const dropped = [];
     for(;;){
       const ratioSum = live.reduce((s, x) => s + x.ratio, 0);
       live.forEach(x => {
         const share = spend * (x.ratio / ratioSum);
-        const pts = x.points || [];
-        const fs = pts.length === x.combos.length
-          ? pts.map(p => (p && p.f > 0) ? p.f : 0) : [];
-        const fSum = fs.reduce((a, b) => a + b, 0);
-        if(fSum > 0){
-          x.units = fs.map(f => Math.max(100, Math.round(share * (f / fSum) / 100) * 100));
-        } else {
-          const u = unitAmount(share, x.combos.length);
-          x.units = x.combos.map(() => u);
-        }
+        const pts = (x.points && x.points.length === x.all.length) ? x.points : null;
+        const w = x.all.map((c, k) => {
+          const f = pts ? pts[k].f : 0;
+          return (f > 0) ? f : 1e-6;      // 増え方が出せない点も等分では残す
+        });
+        const a = allocate(share, w);
+        if(!a){ x.combos = []; x.units = []; x.total = 0; x.unit = 0; return; }
+        x.combos = a.keep.map(i => x.all[i]);
+        x.points = pts ? a.keep.map(i => pts[i]) : x.points;
+        x.units  = a.units;
         x.unit = Math.min.apply(null, x.units);          // 表示用の最小単位
-        x.total = x.units.reduce((a, b) => a + b, 0);
+        x.total = x.units.reduce((a2, b) => a2 + b, 0);
         (x.points || []).forEach((p, k) => { p.yen = x.units[k]; });
       });
-      const used = live.reduce((s, x) => s + x.total, 0);
-      if(used <= spend || live.length <= 1) break;
-      let worst = 0;
-      for(let i=1;i<live.length;i++) if(live[i].prio < live[worst].prio) worst = i;
+      /* 点数で吸収しても1点も置けなかった券種だけ落とす。
+         優先度の低いものから外して、残りに予算を回す。 */
+      const empty = live.filter(x => !x.combos.length);
+      if(!empty.length) break;
+      let worst = -1;
+      live.forEach((x, i) => {
+        if(x.combos.length) return;
+        if(worst < 0 || x.prio < live[worst].prio) worst = i;
+      });
+      if(worst < 0 || live.length <= 1) break;
       dropped.push(live[worst].name);
       live.splice(worst, 1);
     }
@@ -2135,8 +2328,8 @@ this.workerSrc)).WorkerMessageHandler})())}}class WorkerTransport{downloadInfoCa
     analyze, buildBets, unitAmount, verdictOf, defaultHorse, autoPace,
     raceGrade, topKProb, quinellaProb, wideProb, trioProb, placePositions,
     breakEvenOdds, fillBreakEven, comboEv, orderProb, TAKEOUT, RELIABILITY,
-    kellyFraction, growth, hitChance,
-    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS,
+    kellyFraction, growth, hitChance, longestMissRun, bankrollPlan,
+    POLICIES, POLICY_KEYS, POLICY_DEFAULT, policyOf, EXTRA_KINDS, kindOn, KIND_LABEL,
     SANRENTAN_EV, SANRENTAN_MAX,
     upsetRisk, upsetAdvice, UPSET_HIGH, UPSET_MID,
     isValue, isOverbet, VALUE_EV, VALUE_GAP, OVER_EV, BUY_EV, INFO_MIN,
@@ -3066,6 +3259,8 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
       infoLevel: (typeof r.infoLevel === "number") ? r.infoLevel : null,
       pred: Array.isArray(r.pred) ? r.pred : [],
       bets: Array.isArray(r.bets) ? r.bets : [],
+      // 実際に使った額と戻ってきた額。入れるまでは null（回収率の集計から外れる）
+      money: normalizeMoney(r.money),
       result: r.result && r.result.first ? r.result : null
     };
     return out;
@@ -3076,8 +3271,91 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
     return records.map(normalizeRecord).filter(Boolean);
   }
 
+  function normalizeMoney(m){
+    if(!m || typeof m !== "object") return null;
+    const num = v => (typeof v === "number" && isFinite(v) && v >= 0) ? Math.round(v) : null;
+    const spent = num(m.spent), payout = num(m.payout);
+    if(spent == null && payout == null) return null;
+    return {spent: spent, payout: payout};
+  }
+
   function hasResult(r){
     return !!(r && r.result && r.result.first);
+  }
+
+  /* 収支が数えられる記録か。投入額が入っていること（払戻0は「外れ」として有効）。 */
+  function hasMoney(r){
+    return !!(r && r.money && r.money.spent > 0 && r.money.payout != null);
+  }
+
+  /* その記録で提案した買い目の合計。投入額の既定値に使う。 */
+  function suggestedSpend(r){
+    return (r && r.bets || []).reduce((a, b) => a + (Number(b.total) || 0), 0);
+  }
+
+  /* ============================================================
+     収支
+     ------------------------------------------------------------
+     的中率だけでは回収率は分からない。実際に使った額と戻ってきた額を
+     入れてもらい、そこから数える。
+     ============================================================ */
+  function moneyStats(records){
+    const done = (records || []).filter(hasMoney);
+    let spent = 0, payout = 0, hit = 0;
+    done.forEach(r => {
+      spent += r.money.spent; payout += r.money.payout;
+      if(r.money.payout > 0) hit++;
+    });
+    return {
+      races: done.length, spent: spent, payout: payout,
+      profit: payout - spent,
+      roi: spent > 0 ? payout / spent : null,
+      hit: done.length ? hit / done.length : null
+    };
+  }
+
+  /* 日付ごとにまとめる。競馬は日単位で区切って考えることが多い。 */
+  function dayKey(ms){
+    const d = new Date(ms || 0);
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
+
+  function byDay(records){
+    const map = {};
+    (records || []).forEach(r => {
+      const k = dayKey(r.savedAt);
+      (map[k] = map[k] || []).push(r);
+    });
+    return Object.keys(map).sort().reverse().map(k => ({
+      day: k, records: map[k], money: moneyStats(map[k]),
+      stats: raceStats(map[k])
+    }));
+  }
+
+  /* ---------- 目標回収率に対する、その日の立ち位置 ----------
+     いちばん出したい数字は「あと何倍あれば届くか」である。
+     負けているときに残りのレースで取り返そうとすると、必要な回収率は
+     跳ね上がる。その数字を見せずに「あと少し」と言うのは嘘になる。 */
+  function dayPlan(money, target, planSpend){
+    target = target || 1.30;
+    const spent = money.spent || 0, payout = money.payout || 0;
+    if(!(spent > 0)){
+      return {target: target, reached: false, spent: 0, payout: 0, roi: null,
+              shortfall: 0, needRoi: null};
+    }
+    const roi = payout / spent;
+    const shortfall = target * spent - payout;      // いま止めると足りない額
+    // これから planSpend 円を追加で使うとき、その分に必要な回収率
+    const needRoi = (planSpend > 0)
+      ? (target * (spent + planSpend) - payout) / planSpend
+      : null;
+    return {
+      target: target, reached: roi >= target,
+      spent: spent, payout: payout, roi: roi,
+      shortfall: Math.max(0, Math.round(shortfall)),
+      needRoi: needRoi
+    };
   }
   function placings(r){
     return [r.result.first, r.result.second, r.result.third].filter(n => n > 0);
@@ -3243,8 +3521,10 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
         parts: roundParts(x.parts)
       })),
       bets: (bets || []).map(b => ({
-        name: b.name, combos: b.combos, unit: b.unit, total: b.total
+        name: b.name, kind: b.kind || null, combos: b.combos,
+        unit: b.unit, units: b.units || null, total: b.total
       })),
+      money: null,
       result: null
     };
   }
@@ -3258,7 +3538,8 @@ return {parseRacecard, parseHorses, detectRace, htmlToText, looksLikeHtml,
   return {
     MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
     raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord, roundParts
+    makeRecord, addRecord, hasResult, hasMoney, wasUpset, normalize, normalizeRecord,
+    roundParts, normalizeMoney, suggestedSpend, moneyStats, byDay, dayKey, dayPlan
   };
 });
 
@@ -3938,12 +4219,47 @@ function race(){
     distance: numOr($("distance").value, 1800),
     condition: numOr($("condition").value, 0),
     pace: $("pace").value,
-    budget: numOr($("budget").value, 5000),
+    budget: budgetOf(),
+    bankroll: numOr($("bankroll").value, 0),
+    stakePct: numOr($("stakePct").value, 2),
     policy: $("policy").value,
-    sanrenpuku: $("useSanrenpuku").checked,
-    sanrentan: $("useSanrentan").checked
+    kinds: kindsOf()
   };
 }
+
+/* ---------- 買う券種 ----------
+   券種ごとに控除率も、推定のしやすさも違う。どれを買うかは
+   道具が決め切る話ではないので、選べるようにしてある。 */
+const KIND_BOX = {tan:"kindTan", fuku:"kindFuku", umaren:"kindUmaren",
+                  wide:"kindWide", sanrenpuku:"kindSanrenpuku", sanrentan:"kindSanrentan"};
+
+function kindsOf(){
+  const o = {};
+  Object.keys(KIND_BOX).forEach(k => { o[k] = $(KIND_BOX[k]).checked; });
+  return o;
+}
+/* ---------- 1レースに使う額 ----------
+   資金の総額を入れてあれば、その割合で決める。金額で決め打ちすると、
+   外れ続けたときに賭け金だけが変わらず残り、そのまま資金が尽きる。
+   割合で決めれば、負けるほど賭け金も小さくなるので0にはならない。 */
+function budgetOf(){
+  const bank = numOr($("bankroll").value, 0);
+  if(bank >= 1000){
+    const pct = numOr($("stakePct").value, 2);
+    return Math.max(100, Math.floor(bank * pct / 100 / 100) * 100);
+  }
+  return numOr($("budget").value, 5000);
+}
+
+/* 資金を入れているときは、予算欄は「そこから決まる値」を映すだけにする */
+function syncBankroll(){
+  const bank = numOr($("bankroll").value, 0);
+  const on = bank >= 1000;
+  $("budget").readOnly = on;
+  $("budget").classList.toggle("derived", on);
+  if(on) $("budget").value = budgetOf();
+}
+
 function applyRace(r){
   if(!r) return;
   if(r.track && E.TRACKS[r.track]) $("track").value = r.track;
@@ -3954,11 +4270,40 @@ function applyRace(r){
   if(r.condition != null) $("condition").value = r.condition;
   if(r.pace) $("pace").value = r.pace;
   if(r.budget != null) $("budget").value = r.budget;
+  if(r.bankroll != null) $("bankroll").value = r.bankroll;
+  if(r.stakePct != null) $("stakePct").value = r.stakePct;
+  syncBankroll();
   if(r.policy && E.POLICIES[r.policy]) $("policy").value = r.policy;
-  $("useSanrenpuku").checked = !!r.sanrenpuku;
-  $("useSanrentan").checked  = !!r.sanrentan;
+  /* 更新前の保存には kinds が無く、三連複・三連単だけが真偽値で入っている */
+  const k = r.kinds || {umaren:true, wide:true, tan:true, fuku:true,
+                        sanrenpuku: !!r.sanrenpuku, sanrentan: !!r.sanrentan};
+  Object.keys(KIND_BOX).forEach(key => {
+    if(k[key] != null) $(KIND_BOX[key]).checked = !!k[key];
+  });
+  syncKindNote();
   syncPolicyNote();
   syncTrackUI();
+}
+
+/* 選んだ券種について、知っておくべきことを出す。
+   人工のレースで測った値をそのまま書いてある。 */
+function syncKindNote(){
+  const k = kindsOf();
+  const msg = [];
+  if(!k.tan && !k.fuku && !k.umaren && !k.wide && !k.sanrenpuku && !k.sanrentan){
+    msg.push("券種が1つも選ばれていません。");
+  }
+  if(k.wide && k.umaren){
+    msg.push("ワイドは馬連の2〜3倍当たります（同じ3頭のBOXで 47.4% 対 22.8%）。" +
+             "ただし控除率はどちらも22.5%で、回収率は 76.2% 対 75.3% とほぼ同じでした。" +
+             "増えるのは当たる回数で、取り分ではありません。");
+  } else if(k.wide && !k.umaren){
+    msg.push("ワイドは当たる回数が多い券種です。回収率は馬連とほぼ同じ（控除率が同じ22.5%）で、" +
+             "違うのは的中率と1点あたりの配当です。");
+  }
+  if(k.sanrenpuku) msg.push("三連複は控除率25%。当たりにくく、推定の誤差も大きくなります。");
+  if(k.sanrentan) msg.push("三連単は控除率27.5%で最も高く、推定の誤差も最大です。");
+  $("kindNote").textContent = msg.join(" ");
 }
 
 /* 選んだ買い方が何をするのかを、選んだ場で見せる */
@@ -4244,10 +4589,7 @@ function run(){
   // 締切間際にオッズを見るだけで判断できるよう、馬ごとの買い下限を出しておく
   E.fillBreakEven(r, hs, rows, tn);
   const {bets, value, dropped, grade, upset, spend, policy, hitChance} =
-    E.buildBets(rows, r.budget, {
-      policy: r.policy,
-      extras: {sanrenpuku: r.sanrenpuku, sanrentan: r.sanrentan}
-    });
+    E.buildBets(rows, r.budget, {policy: r.policy, kinds: r.kinds});
   const verdict = E.verdictOf(rows);
 
   const t = E.TRACKS[r.track];
@@ -4352,6 +4694,32 @@ function run(){
       `<span class="hc-note">推定勝率から出した見込みです。実際はこれより数ポイント下がります。</span>`;
   }
 
+  /* この買い方だと、どれくらい外れ続けるのか。
+     資金を入れていれば、そのときいくら残るかまで出す。 */
+  const bp = $("bankPlan");
+  const bank = numOr($("bankroll").value, 0);
+  const pct  = numOr($("stakePct").value, 2);
+  bp.hidden = !(bets.length && hitChance > 0);
+  if(!bp.hidden){
+    const plan = E.bankrollPlan(bank >= 1000 ? bank : 0, pct, hitChance, 100);
+    const over = bank >= 1000 && plan.safePct != null && pct > plan.safePct;
+    const lines = [
+      `いまの買い目の的中率が続くとすると、<b>100レースに一度は ${plan.run}連敗</b> があります。`
+    ];
+    if(bank >= 1000){
+      lines.push(`1レース ${yen(budgetOf())}（資金 ${yen(bank)} の ${pct}%）で買うと、` +
+                 `その連敗のあと資金は <b>${yen(Math.round(plan.after))}（${Math.round(plan.afterPct*100)}%）</b> になります。`);
+      lines.push(`連敗を受けても半分を残すなら、1レースは資金の <b>${plan.safePct}%</b> までです。`);
+    } else {
+      lines.push(`資金の総額を入れると、その連敗のあといくら残るかを出します。` +
+                 `金額で決め打ちすると、外れ続けたときに賭け金だけが変わらず残り、そのまま尽きます。`);
+    }
+    bp.className = "bankplan" + (over ? " warn" : "");
+    bp.innerHTML = `<div class="bp-head">資金の保ち方</div>` +
+      lines.map(l => `<div class="bp-line">${l}</div>`).join("") +
+      (over ? `<div class="bp-warn">いまの割合（${pct}%）は上限を超えています。割合を下げてください。</div>` : "");
+  }
+
   $("betList").innerHTML = bets.length ? bets.map(x => `
     <div class="bet">
       <h3>${escapeHtml(x.name)}<span class="pts">${x.combos.length}点</span></h3>
@@ -4364,8 +4732,8 @@ function run(){
             ? `<span class="k">推定期待値</span><span class="v ${x.evEst >= 1 ? "ev-ok" : "ev-ng"}">${x.evEst.toFixed(2)}</span>`
             : `<span class="k">必要オッズ</span><span class="v">${x.needOdds.toFixed(1)}倍〜</span>`}
       </div>
-      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割っています。当たる回数を支えるために買う1点で、
-        この点だけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
+      ${x.underEv ? `<div class="under-ev">推定期待値が 1.0 を割る点を含みます。当たる回数を支えるために買う点で、
+        そこだけを見れば長い目では元本を割ります。回収率を優先するなら「回収率重視」を選んでください。</div>` : ""}
       ${(x.points && x.points.length > 1) ? `
       <table class="pt-table">
         <tr><th>買い目</th><th>金額</th><th>的中</th><th>必要オッズ</th><th>推定期待値</th></tr>
@@ -4392,9 +4760,10 @@ function run(){
   }
   const cutN = bets.reduce((s, x) => s + (x.cut || 0), 0);
   if(cutN) notes.push(`割の合わない ${cutN}点 は、はじめから外してあります。`);
-  if(bets.length && !r.sanrenpuku && !r.sanrentan){
-    notes.push("三連複・三連単は出していません。控除率が高いうえ推定の誤差も大きく、" +
-               "検証では的中率でも回収率でも複勝・ワイドに負けたためです。買う場合は上のチェックを入れてください。");
+  const offKinds = Object.keys(E.KIND_LABEL)
+    .filter(k => !r.kinds[k]).map(k => E.KIND_LABEL[k]);
+  if(bets.length && offKinds.length){
+    notes.push(`選んでいない券種（${offKinds.join("・")}）は出していません。`);
   }
   $("droppedNote").textContent = notes.join(" ");
 
@@ -4578,6 +4947,9 @@ function loadSample(){
 
 /* ---------- イベント ---------- */
 $("policy").addEventListener("change", syncPolicyNote);
+Object.keys(KIND_BOX).forEach(k => $(KIND_BOX[k]).addEventListener("change", syncKindNote));
+$("bankroll").addEventListener("input", syncBankroll);
+$("stakePct").addEventListener("change", syncBankroll);
 $("track").addEventListener("change", syncTrackUI);
 $("surface").addEventListener("change", syncTrackUI);
 $("course").addEventListener("change", syncTrackUI);
@@ -4726,6 +5098,8 @@ $("importFile").addEventListener("change", e => {
 buildTrackSelect();
 syncTrackUI();
 syncPolicyNote();
+syncKindNote();
+syncBankroll();
 addHorses(6);
 
 /* ============================================================
@@ -4806,6 +5180,79 @@ function renderGradeGuide(){
 }
 
 /* ---------- 記録一覧 ---------- */
+const TARGET_KEY = "turf-logic-target-v1";
+function targetRoi(){
+  const v = numOr($("targetRoi").value, 130);
+  return Math.min(500, Math.max(100, v)) / 100;
+}
+function saveTarget(){
+  try{ localStorage.setItem(TARGET_KEY, String($("targetRoi").value)); }catch(e){}
+  renderMoney();
+}
+
+/* ---------- 収支 ----------
+   的中率だけでは回収率は分からない。入れてもらった投入と払戻から数える。
+   目標に届いていないとき、残りで取り返すのに必要な回収率も出す。
+   ここを出さずに「あと少し」と言うのは嘘になる。 */
+function renderMoney(){
+  const box = $("moneyBox");
+  if(!box) return;
+  const all = H.moneyStats(history);
+  if(!all.races){
+    box.hidden = false;
+    box.className = "money-box empty-money";
+    box.innerHTML = `<div class="m-head">収支</div>` +
+      `<div class="m-line">下の各レースに<b>投入</b>と<b>払戻</b>を入れると、回収率が出ます。` +
+      `的中率がいくら高くても、回収率はそれだけでは分かりません。</div>`;
+    return;
+  }
+  const target = targetRoi();
+  const days = H.byDay(history).filter(d => d.money.races > 0);
+  const today = days[0];
+  const plan = today ? H.dayPlan(today.money, target, Math.round(today.money.spent / Math.max(1, today.money.races))) : null;
+
+  const pc = v => v == null ? "—" : (v * 100).toFixed(1) + "%";
+  const cls = v => v == null ? "" : (v >= target ? "good" : v >= 1 ? "mid" : "bad");
+
+  let html = `<div class="m-head">収支</div>`;
+  if(today){
+    html += `<div class="m-row">
+      <span class="m-k">${escapeHtml(today.day)}（${today.money.races}レース）</span>
+      <span class="m-v mono ${cls(today.money.roi)}">${pc(today.money.roi)}</span>
+      <span class="m-sub mono">${yen(today.money.spent)} → ${yen(today.money.payout)}
+        （${today.money.profit >= 0 ? "+" : ""}${yen(today.money.profit)}）</span>
+    </div>`;
+    if(plan.reached){
+      html += `<div class="m-note good">目標の ${Math.round(target*100)}% に届いています。
+        ここでやめれば、この日は目標達成で終わります。</div>`;
+    } else if(plan.needRoi != null && plan.needRoi > 1){
+      html += `<div class="m-note ${plan.needRoi > 3 ? "bad" : ""}">
+        目標まで ${yen(plan.shortfall)} 足りません。次の1レースで取り返すなら、
+        そのレースだけで <b>${pc(plan.needRoi)}</b> の回収が必要です。
+        ${plan.needRoi > 3 ? "この数字は現実的ではありません。賭け金を増やして取り返そうとすると、負けた日の損失だけが大きくなります。" : ""}
+      </div>`;
+    }
+  }
+  html += `<div class="m-row total">
+    <span class="m-k">通算（${all.races}レース）</span>
+    <span class="m-v mono ${cls(all.roi)}">${pc(all.roi)}</span>
+    <span class="m-sub mono">${yen(all.spent)} → ${yen(all.payout)}
+      （${all.profit >= 0 ? "+" : ""}${yen(all.profit)}）</span>
+  </div>`;
+
+  // 目標に届いた日が、何日に1日あったか
+  const reached = days.filter(d => d.money.roi >= target).length;
+  if(days.length >= 3){
+    html += `<div class="m-note">目標に届いた日: ${reached}/${days.length}日
+      （${(100*reached/days.length).toFixed(0)}%）。
+      人工のレースで測ると、何もしなくても 5日に1日ほどは 130% を超えます。
+      日ごとの回収率は大きく散らばるので、良し悪しは通算で見てください。</div>`;
+  }
+  box.hidden = false;
+  box.className = "money-box";
+  box.innerHTML = html;
+}
+
 function renderHistory(){
   const sel = $("histTrack");
   const cur = sel.value || "all";
@@ -4883,6 +5330,13 @@ function renderHistory(){
           <input type="number" min="0" max="18" placeholder="1着" data-res="first"  value="${done ? r.result.first  : ""}">
           <input type="number" min="0" max="18" placeholder="2着" data-res="second" value="${done && r.result.second ? r.result.second : ""}">
           <input type="number" min="0" max="18" placeholder="3着" data-res="third"  value="${done && r.result.third  ? r.result.third  : ""}">
+        </div>
+        <div class="res-form">
+          <span class="hint">投入・払戻（円）</span>
+          <input type="number" min="0" step="100" placeholder="投入" data-res="spent"
+                 value="${r.money && r.money.spent != null ? r.money.spent : (H.suggestedSpend(r) || "")}">
+          <input type="number" min="0" step="10" placeholder="払戻" data-res="payout"
+                 value="${r.money && r.money.payout != null ? r.money.payout : ""}">
           <button type="button" class="primary" data-act="save">結果を記録</button>
           <button type="button" class="danger" data-act="delete">削除</button>
         </div>
@@ -4893,6 +5347,7 @@ function renderHistory(){
 }
 
 $("histTrack").addEventListener("change", renderHistory);
+$("targetRoi").addEventListener("input", saveTarget);
 
 $("histList").addEventListener("click", e => {
   const act = e.target.dataset.act;
@@ -4917,9 +5372,14 @@ $("histList").addEventListener("click", e => {
     return;
   }
   r.result = {first: first, second: val("second"), third: val("third")};
+  const spent = val("spent"), payout = val("payout");
+  const payBox = box.querySelector('[data-res="payout"]');
+  r.money = (spent > 0 && payBox && payBox.value !== "")
+    ? {spent: spent, payout: payout} : null;
   saveHistory(history);
   renderHistory();
   renderJockeys();
+  renderMoney();
   showReview(r);
   autoRelearn();
 });
@@ -5060,7 +5520,12 @@ $("btnSaveRace").addEventListener("click", () => {
 });
 
 renderGradeGuide();
+try{
+  const t = localStorage.getItem(TARGET_KEY);
+  if(t) $("targetRoi").value = t;
+}catch(e){}
 renderHistory();
+renderMoney();
 tune = loadTune();
 renderLearn();
 

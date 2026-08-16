@@ -47,6 +47,8 @@
       infoLevel: (typeof r.infoLevel === "number") ? r.infoLevel : null,
       pred: Array.isArray(r.pred) ? r.pred : [],
       bets: Array.isArray(r.bets) ? r.bets : [],
+      // 実際に使った額と戻ってきた額。入れるまでは null（回収率の集計から外れる）
+      money: normalizeMoney(r.money),
       result: r.result && r.result.first ? r.result : null
     };
     return out;
@@ -57,8 +59,91 @@
     return records.map(normalizeRecord).filter(Boolean);
   }
 
+  function normalizeMoney(m){
+    if(!m || typeof m !== "object") return null;
+    const num = v => (typeof v === "number" && isFinite(v) && v >= 0) ? Math.round(v) : null;
+    const spent = num(m.spent), payout = num(m.payout);
+    if(spent == null && payout == null) return null;
+    return {spent: spent, payout: payout};
+  }
+
   function hasResult(r){
     return !!(r && r.result && r.result.first);
+  }
+
+  /* 収支が数えられる記録か。投入額が入っていること（払戻0は「外れ」として有効）。 */
+  function hasMoney(r){
+    return !!(r && r.money && r.money.spent > 0 && r.money.payout != null);
+  }
+
+  /* その記録で提案した買い目の合計。投入額の既定値に使う。 */
+  function suggestedSpend(r){
+    return (r && r.bets || []).reduce((a, b) => a + (Number(b.total) || 0), 0);
+  }
+
+  /* ============================================================
+     収支
+     ------------------------------------------------------------
+     的中率だけでは回収率は分からない。実際に使った額と戻ってきた額を
+     入れてもらい、そこから数える。
+     ============================================================ */
+  function moneyStats(records){
+    const done = (records || []).filter(hasMoney);
+    let spent = 0, payout = 0, hit = 0;
+    done.forEach(r => {
+      spent += r.money.spent; payout += r.money.payout;
+      if(r.money.payout > 0) hit++;
+    });
+    return {
+      races: done.length, spent: spent, payout: payout,
+      profit: payout - spent,
+      roi: spent > 0 ? payout / spent : null,
+      hit: done.length ? hit / done.length : null
+    };
+  }
+
+  /* 日付ごとにまとめる。競馬は日単位で区切って考えることが多い。 */
+  function dayKey(ms){
+    const d = new Date(ms || 0);
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
+
+  function byDay(records){
+    const map = {};
+    (records || []).forEach(r => {
+      const k = dayKey(r.savedAt);
+      (map[k] = map[k] || []).push(r);
+    });
+    return Object.keys(map).sort().reverse().map(k => ({
+      day: k, records: map[k], money: moneyStats(map[k]),
+      stats: raceStats(map[k])
+    }));
+  }
+
+  /* ---------- 目標回収率に対する、その日の立ち位置 ----------
+     いちばん出したい数字は「あと何倍あれば届くか」である。
+     負けているときに残りのレースで取り返そうとすると、必要な回収率は
+     跳ね上がる。その数字を見せずに「あと少し」と言うのは嘘になる。 */
+  function dayPlan(money, target, planSpend){
+    target = target || 1.30;
+    const spent = money.spent || 0, payout = money.payout || 0;
+    if(!(spent > 0)){
+      return {target: target, reached: false, spent: 0, payout: 0, roi: null,
+              shortfall: 0, needRoi: null};
+    }
+    const roi = payout / spent;
+    const shortfall = target * spent - payout;      // いま止めると足りない額
+    // これから planSpend 円を追加で使うとき、その分に必要な回収率
+    const needRoi = (planSpend > 0)
+      ? (target * (spent + planSpend) - payout) / planSpend
+      : null;
+    return {
+      target: target, reached: roi >= target,
+      spent: spent, payout: payout, roi: roi,
+      shortfall: Math.max(0, Math.round(shortfall)),
+      needRoi: needRoi
+    };
   }
   function placings(r){
     return [r.result.first, r.result.second, r.result.third].filter(n => n > 0);
@@ -224,8 +309,10 @@
         parts: roundParts(x.parts)
       })),
       bets: (bets || []).map(b => ({
-        name: b.name, combos: b.combos, unit: b.unit, total: b.total
+        name: b.name, kind: b.kind || null, combos: b.combos,
+        unit: b.unit, units: b.units || null, total: b.total
       })),
+      money: null,
       result: null
     };
   }
@@ -239,6 +326,7 @@
   return {
     MAX_RECORDS, MIN_RIDES, GRADE_GUIDE, UPSET_ODDS,
     raceStats, byTrack, byUpset, jockeyStats, suggestGrade,
-    makeRecord, addRecord, hasResult, wasUpset, normalize, normalizeRecord, roundParts
+    makeRecord, addRecord, hasResult, hasMoney, wasUpset, normalize, normalizeRecord,
+    roundParts, normalizeMoney, suggestedSpend, moneyStats, byDay, dayKey, dayPlan
   };
 });
